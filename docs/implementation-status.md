@@ -15,7 +15,7 @@ Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned G
 - Official rules, FalkorDB query/persistence/client docs and both prior-art papers inspected.
 
 ## Verified
-- `apps/api/.venv/bin/pytest -q`: 3 passed before the separate Coordinator model call was added (authorization helper and health behavior; unit tests, no live DB/model). Re-run after the current slice.
+- `apps/api/.venv/bin/pytest -q`: 5 passed (workspace authorization/health and isolated Analyst/Coordinator orchestration/evidence-gating tests; test doubles only in unit tests, no live DB/model).
 - `npm test -- --reporter=verbose`: 1 passed (first-use UI; stubbed health response).
 - `npm run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed.
@@ -28,7 +28,7 @@ Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned G
 ## Blocked
 - Actual FalkorDB query semantics/persistence/restart and live model extraction: DB daemon/model secret not available.
 - End-to-end browser workflow: database/model unavailable.
-- Agent slice is not yet committed or pushed.
+- The separate Analyst/Coordinator workflow commit is pushed; follow-up agent unit tests and evidence-gate hardening are not yet committed.
 
 ## Deferred
 - Repair specialist role, run pause/cancel lifecycle, fresh-session retrieval UX, and persisted run listing/detail endpoint.
