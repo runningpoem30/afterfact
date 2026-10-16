@@ -11,7 +11,12 @@ Each workspace owns a separate FalkorDB graph. Graph selection is server-derived
 - `Claim`: structured subject/predicate/value/scope, human statement, valid time, recorded time, lifecycle state, extraction confidence, revision. Unresolved entities are marked `unresolved`; confidence is not truth.
 - `Correction`: corrected statement, explicit reviewer authority, timestamp, status.
 - `AuditEvent`: durable event type, JSON payload and timestamp.
-- Planned but not yet implemented: `EvidenceGroup`, `Decision`, `Action`, `Agent`, `AgentRun`, `Session`, `Handoff`, `Investigation`, `RepairPlan`, `Job`.
+- `Agent`: separate `analyst` and `coordinator` role records.
+- `AgentRun`: role, task, completion state, provider/model, elapsed duration, bounded tool calls, and evidence IDs.
+- `Handoff`: serialized structured proposal and acknowledgment state.
+- `Decision`: draft/needs-review proposal, rationale, uncertainty, and support requirement.
+- `Action`: non-executable proposed work requiring a decision; only created when retrieved evidence IDs support the proposal.
+- Planned but not yet implemented: `EvidenceGroup`, `Session`, `Investigation`, `RepairPlan`, `Job`.
 
 ## Relationships
 
@@ -21,10 +26,14 @@ Each workspace owns a separate FalkorDB graph. Graph selection is server-derived
 - `(OldClaim)-[:SUPERSEDES]->(ReplacementClaim)` (history is retained; replacement stays proposed)
 - `(Correction)-[:CORRECTS]->(OldClaim)`
 - `(ReplacementClaim)-[:DERIVED_FROM]->(Correction)`
-- Planned: `(Decision)-[:USED_CLAIM]->(Claim)`, `(Action)-[:REQUIRES]->(Decision)`, support-group semantics, and agent handoff relationships.
+- `(Analyst)-[:PRODUCED]->(AnalystRun)-[:HANDED_OFF_TO]->(Handoff)-[:HANDED_OFF_TO]->(CoordinatorRun)`
+- `(Agent)-[:PRODUCED]->(AgentRun)`
+- `(CoordinatorRun)-[:PRODUCED]->(Decision)` and optionally `(CoordinatorRun)-[:PRODUCED]->(Action)`
+- `(Decision)-[:USED_CLAIM]->(Claim)`; `(Action)-[:REQUIRES]->(Decision)`
+- Planned: explicit evidence groups and their alternative/necessary support semantics.
 
 Relationship direction is intentional: claims point to support; newer claims point forward through `SUPERSEDES`; the correction itself points to the corrected historical claim. Dependency evaluation must inspect support requirements and alternatives—not infer invalidity from reachability alone.
 
 ## States
 
-Claim: proposed / accepted / contested / superseded / retracted. Decision and action states are planned in `state-transitions.md`; current backend sets dependent decisions to `needs_review` and pending actions to `held` after correction. Those nodes are not yet produced by agent workflows.
+Claim: proposed / accepted / contested / superseded / retracted. Agent search excludes superseded/retracted claims. Decision and action state transition rules are documented in `state-transitions.md`; agent output creates draft decisions and proposed actions only. Correction marks direct dependent decisions for review and pending dependent actions held; this remains conservative and incomplete.

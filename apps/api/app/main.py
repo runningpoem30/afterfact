@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from .settings import settings
 from .store import GraphUnavailable, RecallStore
 from .extractor import ExtractorUnavailable, ModelExtractor
+from .agents import AgentUnavailable, RecallAgents
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("recall")
@@ -132,7 +133,7 @@ def process_source(payload: SourceIn) -> dict[str, Any]:
         payload.authority = "user_submitted"
         return store().ingest_source(payload, source_id, claims)
     except GraphUnavailable as exc:
-        raise HTTPException(503, detail={"code": "falkordb_unavailable", "message": str(exc)}) from exc
+        raise HTTPException(status_code=503, detail={"code": "falkordb_unavailable", "message": str(exc)}) from exc
 
 
 @app.post("/api/v1/sources", status_code=201)
@@ -170,6 +171,34 @@ def events(workspace_id: str, after: int = 0, limit: int = 100, authorization: s
     safe_graph_id(workspace_id)
     authorize_workspace(workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
     return store().events(workspace_id, after, min(max(limit, 1), 200))
+
+
+class AgentTaskIn(BaseModel):
+    task: str = Field(min_length=8, max_length=1000)
+
+
+@app.get("/api/v1/workspaces/{workspace_id}/decisions")
+def decisions(workspace_id: str, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    safe_graph_id(workspace_id)
+    authorize_workspace(workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
+    return store().decisions(workspace_id)
+
+
+@app.get("/api/v1/workspaces/{workspace_id}/actions")
+def actions(workspace_id: str, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    safe_graph_id(workspace_id)
+    authorize_workspace(workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
+    return store().actions(workspace_id)
+
+
+@app.post("/api/v1/workspaces/{workspace_id}/agents/tasks", status_code=201)
+def run_agent_task(workspace_id: str, payload: AgentTaskIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    safe_graph_id(workspace_id)
+    authorize_workspace(workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
+    try:
+        return RecallAgents(store()).run_task(workspace_id, payload.task)
+    except AgentUnavailable as exc:
+        raise HTTPException(503, detail={"code": "agent_unavailable", "message": str(exc)}) from exc
 
 
 @app.post("/api/v1/corrections/preview")

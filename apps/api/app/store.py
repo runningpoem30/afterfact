@@ -89,6 +89,20 @@ class RecallStore:
     def events(self, workspace_id: str, after: int, limit: int) -> list[dict[str, Any]]:
         return self.rows(self._graph(workspace_id).ro_query("MATCH (e:AuditEvent) RETURN e.id AS id, e.type AS type, e.payload AS payload, e.created_at AS created_at ORDER BY e.created_at DESC SKIP $after LIMIT $limit", {"after": after, "limit": limit}))
 
+    def search_current_claims(self, workspace_id: str, query: str, limit: int) -> list[dict[str, Any]]:
+        return self.rows(self._graph(workspace_id).ro_query("MATCH (c:Claim) WHERE c.status IN ['proposed','accepted','contested'] AND toLower(c.statement) CONTAINS toLower($q) RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit", {"q": query, "limit": min(limit, 20)}))
+
+    def source_evidence(self, workspace_id: str, claim_ids: list[str]) -> list[dict[str, Any]]:
+        if not claim_ids:
+            return []
+        return self.rows(self._graph(workspace_id).ro_query("MATCH (c:Claim)-[:SUPPORTED_BY]->(f:SourceFragment) WHERE c.id IN $ids AND c.status IN ['proposed','accepted','contested'] RETURN c.id AS claim_id, c.statement AS statement, c.status AS status, c.evidence_quote AS evidence_quote, f.text AS source_text, c.confidence AS confidence LIMIT 20", {"ids": claim_ids}))
+
+    def decisions(self, workspace_id: str) -> list[dict[str, Any]]:
+        return self.rows(self._graph(workspace_id).ro_query("MATCH (d:Decision) OPTIONAL MATCH (d)-[:USED_CLAIM]->(c:Claim) RETURN d.id AS id, d.title AS title, d.statement AS rationale, d.status AS status, d.uncertainty AS uncertainty, collect(c.id) AS claim_ids ORDER BY d.created_at DESC LIMIT 100"))
+
+    def actions(self, workspace_id: str) -> list[dict[str, Any]]:
+        return self.rows(self._graph(workspace_id).ro_query("MATCH (a:Action)-[:REQUIRES]->(d:Decision) RETURN a.id AS id, a.title AS title, a.status AS status, a.created_at AS created_at, d.id AS decision_id, d.status AS decision_status LIMIT 100"))
+
     def ingest_source(self, payload: Any, source_id: str, claims: list[dict[str, Any]]) -> dict[str, Any]:
         g = self._graph(payload.workspace_id)
         version_id = __import__("uuid").uuid4().hex
