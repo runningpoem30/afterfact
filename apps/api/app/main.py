@@ -65,8 +65,8 @@ def health() -> dict[str, Any]:
         db_ok = True
     except Exception as exc:
         db_error = type(exc).__name__
-    model_ok = bool(settings.openai_api_key)
-    return {"status": "ok" if db_ok else "degraded", "integrations": {"falkordb": {"configured": bool(settings.falkordb_host), "available": db_ok, "error": db_error}, "model": {"configured": model_ok, "provider": settings.model_provider if model_ok else None, "model": settings.model_name if model_ok else None}}, "capabilities": {"source_ingestion": db_ok and model_ok, "correction_repair": db_ok, "agents": db_ok and model_ok}}
+    model_ok = bool(settings.vercel_ai_gateway_api_key)
+    return {"status": "ok" if db_ok else "degraded", "integrations": {"falkordb": {"configured": bool(settings.falkordb_host), "available": db_ok, "error": db_error}, "model": {"configured": model_ok, "provider": settings.model_provider if model_ok else None, "model": settings.model_name if model_ok else None, "base_url": settings.vercel_ai_gateway_base_url if model_ok else None}}, "capabilities": {"source_ingestion": db_ok and model_ok, "correction_repair": db_ok, "agents": db_ok and model_ok}}
 
 
 @app.post("/api/v1/workspaces", status_code=201)
@@ -118,8 +118,8 @@ def sources(workspace_id: str, authorization: str | None = Header(default=None))
 
 
 def process_source(payload: SourceIn) -> dict[str, Any]:
-    if not settings.openai_api_key:
-        raise HTTPException(503, detail={"code": "model_unconfigured", "message": "Set OPENAI_API_KEY to extract and validate claims. Source ingestion requires a real model call."})
+    if not settings.vercel_ai_gateway_api_key:
+        raise HTTPException(503, detail={"code": "model_unconfigured", "message": "Set VERCEL_AI_GATEWAY_API_KEY to extract and validate claims. Source ingestion requires a real model call."})
     try:
         claims = ModelExtractor().extract(payload.content)
     except ExtractorUnavailable as exc:

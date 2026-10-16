@@ -2,7 +2,7 @@
 
 **Do not record the full live demo until the documented prerequisites are connected and the workflow has passed acceptance checks.** No prerecorded or fabricated graph is acceptable.
 
-1. Show system health and explain FalkorDB is the primary store and OpenAI extraction is a real API call.
+1. Show system health and explain FalkorDB is the primary store and model calls route through Vercel AI Gateway.
 2. Create a new private workspace (separate graph; fresh session token).
 3. Paste a newly authored or permitted synthetic document with named facts; ingest and show the model-generated claim quotes and source span.
 4. Inspect the persisted graph and open the source-backed claim; explain extraction confidence is not factual truth.

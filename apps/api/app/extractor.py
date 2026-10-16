@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openai import OpenAI
-
+from .model_client import ModelNotConfigured, create_model_client
 from .settings import settings
 
 
@@ -16,9 +15,10 @@ class ModelExtractor:
     """Strict structured extraction. Quotes are checked against the source by the API."""
 
     def extract(self, source: str) -> list[dict[str, Any]]:
-        if not settings.openai_api_key:
-            raise ExtractorUnavailable("OPENAI_API_KEY is not configured")
-        client = OpenAI(api_key=settings.openai_api_key, timeout=30.0, max_retries=1)
+        try:
+            client = create_model_client(timeout=30.0, max_retries=1)
+        except ModelNotConfigured as exc:
+            raise ExtractorUnavailable(str(exc)) from exc
         try:
             result = client.chat.completions.create(
                 model=settings.model_name,

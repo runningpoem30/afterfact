@@ -55,14 +55,11 @@ def response(content=None, tool_calls=None):
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=tool_calls))])
 
 
-def tool_result_message():
-    return response(tool_calls=[FakeCall("search_claims", '{"query":"launch"}', "search-1")])
-
 
 def test_analyst_retrieves_graph_evidence_then_coordinator_writes_proposals(monkeypatch):
     import app.agents as module
 
-    monkeypatch.setattr(module.settings, "openai_api_key", "test-only")
+    monkeypatch.setattr(module.settings, "vercel_ai_gateway_api_key", "test-only")
     monkeypatch.setattr(module.settings, "model_name", "unit-test-model")
     store = FakeStore()
     agent = RecallAgents.__new__(RecallAgents)
@@ -91,7 +88,7 @@ def test_analyst_retrieves_graph_evidence_then_coordinator_writes_proposals(monk
 def test_coordinator_cannot_create_action_without_retrieved_support(monkeypatch):
     import app.agents as module
 
-    monkeypatch.setattr(module.settings, "openai_api_key", "test-only")
+    monkeypatch.setattr(module.settings, "vercel_ai_gateway_api_key", "test-only")
     monkeypatch.setattr(module.settings, "model_name", "unit-test-model")
     store = FakeStore(with_evidence=False)
     agent = RecallAgents.__new__(RecallAgents)

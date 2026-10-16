@@ -5,7 +5,7 @@ Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned G
 ## Implemented (code-level only)
 - FalkorDB is the required graph store, with one server-derived graph per UUID workspace; no in-memory fallback.
 - Source, version, fragment, claim, correction and audit-event graph records; Compose uses append-only persistence and a named volume.
-- Real OpenAI structured extraction with exact-substring quote validation; no canned model fallback.
+- Vercel AI Gateway OpenAI-compatible adapter configured via `VERCEL_AI_GATEWAY_API_KEY`; exact-substring quote validation; no provider/canned fallback. Configuration tested; a live Gateway call still awaits the user's key.
 - Bounded model-driven Analyst tools (`search_claims`, source fragment retrieval) hand a structured proposal to a separate Coordinator model call; separate run records, tool metadata, handoff artifacts, decision/action proposals and events are persisted.
 - Signed, expiring guest workspace tokens; routes require workspace authorization.
 - Bounded graph endpoint; React Flow consumes backend-returned nodes/edges.
@@ -15,20 +15,20 @@ Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned G
 - Official rules, FalkorDB query/persistence/client docs and both prior-art papers inspected.
 
 ## Verified
-- `apps/api/.venv/bin/pytest -q`: 5 passed (workspace authorization/health and isolated Analyst/Coordinator orchestration/evidence-gating tests; test doubles only in unit tests, no live DB/model).
+- `apps/api/.venv/bin/pytest -q`: 7 passed (workspace authorization/health, isolated Analyst/Coordinator orchestration/evidence gating, Gateway client configuration; test doubles only in unit tests, no live DB/model).
 - `npm test -- --reporter=verbose`: 1 passed (first-use UI; stubbed health response).
 - `npm run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed.
 - Python 3.13.4, Node 24.1.0 and npm 11.6.0 available.
 - Docker CLI present but daemon socket unavailable; `docker info` denied.
-- `OPENAI_API_KEY` not configured.
+- `VERCEL_AI_GATEWAY_API_KEY` not configured; no live model calls have been made.
 - Official rules require FalkorDB as primary graph DB, public repository, setup/model/query documentation, demo video and declared track.
 - Initial documentation/API/UI commits were pushed successfully to `https://github.com/runningpoem30/afterfact` on `master`.
 
 ## Blocked
 - Actual FalkorDB query semantics/persistence/restart and live model extraction: DB daemon/model secret not available.
 - End-to-end browser workflow: database/model unavailable.
-- The separate Analyst/Coordinator workflow commit is pushed; follow-up agent unit tests and evidence-gate hardening are not yet committed.
+- The Gateway adapter and env template are part of the current configuration change; a live Gateway call still awaits the user's key.
 
 ## Deferred
 - Repair specialist role, run pause/cancel lifecycle, fresh-session retrieval UX, and persisted run listing/detail endpoint.
@@ -44,4 +44,4 @@ Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned G
 - One fragment per source version; no chunking.
 - Dependency impact preview currently covers direct `USED_CLAIM` consumers only; alternative support and multi-hop re-evaluation are not complete.
 - The configured FalkorDB image tag has not been pulled or digest-pinned; verify before submission.
-- The current agent code and query catalog have not been tested against the configured FalkorDB image or a real model response.
+- The current agent code and query catalog have not been tested against the configured FalkorDB image or a real Vercel Gateway model response.

@@ -6,8 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from openai import OpenAI
-
+from .model_client import ModelNotConfigured, create_model_client
 from .settings import settings
 from .store import RecallStore
 
@@ -20,10 +19,11 @@ class RecallAgents:
     """An Analyst retrieves graph evidence; a Coordinator evaluates the handoff."""
 
     def __init__(self, store: RecallStore) -> None:
-        if not settings.openai_api_key:
-            raise AgentUnavailable("OPENAI_API_KEY is not configured; agent runs require real model calls")
+        try:
+            self.client = create_model_client(timeout=40.0, max_retries=1)
+        except ModelNotConfigured as exc:
+            raise AgentUnavailable(str(exc)) from exc
         self.store = store
-        self.client = OpenAI(api_key=settings.openai_api_key, timeout=40.0, max_retries=1)
 
     def run_task(self, workspace_id: str, task: str) -> dict[str, Any]:
         graph = self.store._graph(workspace_id)
