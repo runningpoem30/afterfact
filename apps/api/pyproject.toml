@@ -1,0 +1,22 @@
+[project]
+name = "recall-api"
+version = "0.1.0"
+description = "Evidence-backed agent memory repair, powered by FalkorDB"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.115.12",
+  "uvicorn[standard]==0.34.0",
+  "pydantic==2.10.6",
+  "pydantic-settings==2.7.1",
+  "FalkorDB==1.2.0",
+  "openai==1.68.2",
+  "python-multipart==0.0.20",
+  "itsdangerous==2.2.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5", "httpx==0.28.1"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

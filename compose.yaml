@@ -1,0 +1,33 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:v4.10.0
+    command: ["--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - recall_graph_data:/var/lib/falkordb/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build: ./apps/api
+    env_file:
+      - .env
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+    ports:
+      - "8000:8000"
+    depends_on:
+      falkordb:
+        condition: service_healthy
+  web:
+    build: ./apps/web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+volumes:
+  recall_graph_data:
