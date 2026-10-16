@@ -1,0 +1,11 @@
+.env
+.venv/
+node_modules/
+.npm-cache/
+__pycache__/
+*.py[cod]
+.DS_Store
+apps/web/dist/
+apps/web/.npm-cache/
+apps/web/tsconfig.tsbuildinfo
+apps/api/*.egg-info/
