@@ -95,7 +95,7 @@ class RecallStore:
         now = datetime.now(timezone.utc).isoformat()
         fragment_id = __import__("uuid").uuid4().hex
         # Each source currently has one immutable fragment, keeping extracted quotes addressable.
-        g.query("CREATE (s:Source {id:$sid, name:$name, authority:$authority}) CREATE (v:SourceVersion {id:$vid, content:$content, created_at:$created, status:'active'}) CREATE (s)-[:HAS_VERSION]->(v) CREATE (f:SourceFragment {id:$fid, text:$content, start_offset:0, end_offset:$end}) CREATE (v)-[:HAS_FRAGMENT]->(f)", {"sid": source_id, "name": payload.name, "authority": payload.authority, "vid": version_id, "content": payload.content, "created": now, "fid": fragment_id, "end": len(payload.content)})
+        g.query("CREATE (s:Source {id:$sid, name:$name, authority:$authority}) CREATE (v:SourceVersion {id:$vid, content:$content, created_at:$created, status:'active'}) CREATE (s)-[:HAS_VERSION]->(v) CREATE (f:SourceFragment {id:$fid, text:$content, start_offset:0, end_offset:$end}) CREATE (v)-[:HAS_FRAGMENT]->(f)", {"sid": source_id, "name": payload.name, "authority": "user_submitted", "vid": version_id, "content": payload.content, "created": now, "fid": fragment_id, "end": len(payload.content)})
         stored = []
         for claim in claims:
             cid = __import__("uuid").uuid4().hex
@@ -113,9 +113,11 @@ class RecallStore:
         current = self.rows(g.ro_query("MATCH (c:Claim {id:$id}) OPTIONAL MATCH (c)-[:SUPPORTED_BY]->(f:SourceFragment)<-[:HAS_FRAGMENT]-(v:SourceVersion)<-[:HAS_VERSION]-(s:Source) RETURN c.id AS id, c.statement AS statement, c.status AS status, c.revision AS revision, s.name AS source_name, f.text AS source_text", {"id": payload.claim_id}))
         if not current:
             raise GraphUnavailable("Claim not found")
-        affected = self.rows(g.ro_query("MATCH (c:Claim {id:$id})-[:USED_CLAIM|DERIVED_FROM*1..8]->(d) RETURN DISTINCT d.id AS id, labels(d)[0] AS type, d.statement AS statement, d.status AS status LIMIT 100", {"id": payload.claim_id}))
-        # Direct references to claims in decision/action records are included as dependency paths in graph model.
-        return {"claim": current[0], "correction": payload.corrected_statement, "affected": affected, "workspace_revision": self.rows(g.ro_query("MATCH (w:Workspace {id:$id}) RETURN w.revision AS revision", {"id": payload.workspace_id}))[0]["revision"], "mode": "preview_only", "uncertainty": "Support alternatives and dependency coverage must be reviewed before applying."}
+        affected = self.rows(g.ro_query("MATCH (c:Claim {id:$id})<-[:USED_CLAIM]-(d) RETURN DISTINCT d.id AS id, labels(d)[0] AS type, d.statement AS statement, d.status AS status LIMIT 100", {"id": payload.claim_id}))
+        revision_rows = self.rows(g.ro_query("MATCH (w:Workspace {id:$id}) RETURN w.revision AS revision", {"id": payload.workspace_id}))
+        if not revision_rows:
+            raise GraphUnavailable("Workspace not found")
+        return {"claim": current[0], "correction": payload.corrected_statement, "affected": affected, "workspace_revision": revision_rows[0]["revision"], "mode": "preview_only", "uncertainty": "Support alternatives and dependency coverage must be reviewed before applying."}
 
     def apply_correction(self, payload: Any) -> dict[str, Any]:
         g = self._graph(payload.workspace_id)
@@ -126,7 +128,7 @@ class RecallStore:
         correction_id = __import__("uuid").uuid4().hex
         replacement_id = __import__("uuid").uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
-        g.query("MATCH (old:Claim {id:$id}) CREATE (corr:Correction {id:$correction_id, corrected_statement:$statement, authority:$authority, created_at:$created, status:'applied'}) CREATE (replacement:Claim {id:$replacement_id, statement:$statement, subject:old.subject, predicate:old.predicate, value:'unresolved', entity_scope:old.entity_scope, valid_time:'unknown', recorded_at:$created, status:'proposed', confidence:1.0, revision:old.revision + 1}) CREATE (old)-[:SUPERSEDES]->(replacement) CREATE (corr)-[:CORRECTS]->(old) CREATE (replacement)-[:DERIVED_FROM]->(corr) SET old.status='superseded', old.revision=old.revision + 1", {"id": payload.claim_id, "correction_id": correction_id, "replacement_id": replacement_id, "statement": payload.corrected_statement, "authority": payload.authority, "created": now})
+        g.query("MATCH (old:Claim {id:$id}) CREATE (corr:Correction {id:$correction_id, corrected_statement:$statement, reviewer_note:$reviewer_note, created_at:$created, status:'applied'}) CREATE (replacement:Claim {id:$replacement_id, statement:$statement, subject:old.subject, predicate:old.predicate, value:'unresolved', entity_scope:old.entity_scope, valid_time:'unknown', recorded_at:$created, status:'proposed', confidence:1.0, revision:old.revision + 1}) CREATE (old)-[:SUPERSEDES]->(replacement) CREATE (corr)-[:CORRECTS]->(old) CREATE (replacement)-[:DERIVED_FROM]->(corr) SET old.status='superseded', old.revision=old.revision + 1", {"id": payload.claim_id, "correction_id": correction_id, "replacement_id": replacement_id, "statement": payload.corrected_statement, "reviewer_note": payload.reviewer_note, "created": now})
         # Conservative propagation: decisions using the superseded claim require review; pending actions are held.
         g.query("MATCH (c:Claim {id:$id})<-[:USED_CLAIM]-(d:Decision) SET d.status='needs_review'", {"id": payload.claim_id})
         g.query("MATCH (c:Claim {id:$id})<-[:USED_CLAIM]-(d:Decision)<-[:REQUIRES]-(a:Action) WHERE a.status IN ['proposed','approved'] SET a.status='held'", {"id": payload.claim_id})

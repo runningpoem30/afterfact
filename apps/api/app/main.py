@@ -37,14 +37,14 @@ class SourceIn(BaseModel):
     workspace_id: str
     name: str = Field(min_length=1, max_length=240)
     content: str = Field(min_length=40, max_length=250_000)
-    authority: str = Field(default="user_submitted", max_length=80)
+
 
 
 class CorrectionIn(BaseModel):
     workspace_id: str
     claim_id: str
     corrected_statement: str = Field(min_length=8, max_length=2000)
-    authority: str = Field(default="user_reviewed", max_length=80)
+    reviewer_note: str | None = Field(default=None, max_length=500)
 
 
 def safe_graph_id(workspace_id: str) -> str:
@@ -116,11 +116,7 @@ def sources(workspace_id: str, authorization: str | None = Header(default=None))
     return store().sources(workspace_id)
 
 
-@app.post("/api/v1/sources", status_code=201)
-def ingest_source(payload: SourceIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    safe_graph_id(payload.workspace_id)
-    authorize_workspace(payload.workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
-    # Do not persist a half-ingested source when the required model is unavailable.
+def process_source(payload: SourceIn) -> dict[str, Any]:
     if not settings.openai_api_key:
         raise HTTPException(503, detail={"code": "model_unconfigured", "message": "Set OPENAI_API_KEY to extract and validate claims. Source ingestion requires a real model call."})
     try:
@@ -128,15 +124,22 @@ def ingest_source(payload: SourceIn, authorization: str | None = Header(default=
     except ExtractorUnavailable as exc:
         raise HTTPException(502, detail={"code": "extraction_failed", "message": str(exc)}) from exc
     source_id = str(uuid.uuid4())
-    # Validate every evidence quote against submitted content before graph writes.
     for claim in claims:
         quote = claim.get("evidence_quote", "")
         if not quote or quote not in payload.content:
             raise HTTPException(422, detail={"code": "invalid_provenance", "message": "Model returned a claim whose evidence quote is not an exact source substring."})
     try:
+        payload.authority = "user_submitted"
         return store().ingest_source(payload, source_id, claims)
     except GraphUnavailable as exc:
         raise HTTPException(503, detail={"code": "falkordb_unavailable", "message": str(exc)}) from exc
+
+
+@app.post("/api/v1/sources", status_code=201)
+def ingest_source(payload: SourceIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    safe_graph_id(payload.workspace_id)
+    authorize_workspace(payload.workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
+    return process_source(payload)
 
 
 @app.post("/api/v1/sources/upload", status_code=201)
@@ -152,7 +155,7 @@ async def upload_source(workspace_id: str, file: UploadFile = File(...), authori
         content = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(415, "File must be UTF-8 text") from exc
-    return ingest_source(SourceIn(workspace_id=workspace_id, name=file.filename, content=content))
+    return process_source(SourceIn(workspace_id=workspace_id, name=file.filename, content=content))
 
 
 @app.get("/api/v1/workspaces/{workspace_id}/claims")

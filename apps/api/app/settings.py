@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     model_provider: str = "openai"
     model_name: str = "gpt-4o-mini"
     session_secret: str = "local-development-only-change-me"
-    max_upload_bytes: int = 5_000_000
+    max_upload_bytes: int = 250_000
     cors_origins: list[str] = ["http://localhost:5173"]
 
 
