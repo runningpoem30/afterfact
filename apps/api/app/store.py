@@ -21,7 +21,7 @@ class RecallStore:
 
     def __init__(self) -> None:
         try:
-            self.db = FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port, username=settings.falkordb_username, password=settings.falkordb_password, socket_timeout=3)
+            self.db = FalkorDB(host=settings.falkordb_host, port=settings.falkordb_port, username=settings.falkordb_username, password=settings.falkordb_password, ssl=settings.falkordb_ssl, socket_timeout=3)
         except Exception as exc:
             raise GraphUnavailable("Could not connect to FalkorDB") from exc
 

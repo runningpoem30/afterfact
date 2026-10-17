@@ -3,7 +3,7 @@
 Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned Git commit and configured origin appeared during implementation and were preserved.
 
 ## Implemented (code-level only)
-- FalkorDB is the required graph store, with one server-derived graph per UUID workspace; no in-memory fallback.
+- FalkorDB is the required graph store, with one server-derived graph per UUID workspace; no in-memory fallback. Host, port, ACL username/password, and TLS are environment-configurable.
 - Source, version, fragment, claim, correction and audit-event graph records; Compose uses append-only persistence and a named volume.
 - Vercel AI Gateway OpenAI-compatible adapter configured via `VERCEL_AI_GATEWAY_API_KEY`; exact-substring quote validation; no provider/canned fallback. Configuration tested; a live Gateway call still awaits the user's key.
 - Bounded model-driven Analyst tools (`search_claims`, source fragment retrieval) hand a structured proposal to a separate Coordinator model call; separate run records, tool metadata, handoff artifacts, decision/action proposals and events are persisted.

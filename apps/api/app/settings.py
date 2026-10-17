@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     falkordb_port: int = 6379
     falkordb_password: str | None = None
     falkordb_username: str | None = None
+    falkordb_ssl: bool = False
     vercel_ai_gateway_api_key: str | None = None
     vercel_ai_gateway_base_url: str = "https://ai-gateway.vercel.sh/v1"
     model_provider: str = "vercel-ai-gateway"

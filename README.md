@@ -17,12 +17,12 @@ Local development without Compose: start FalkorDB with a persistent volume, inst
 
 ## Configuration notes
 
-The checked-in [`env.template`](env.template) lists all supported variables with non-secret local defaults. Copy it to `.env`; `.env` is ignored by Git.
+The checked-in [`env.template`](env.template) lists all supported variables with non-secret local defaults. Copy it to `.env`; `.env` is ignored by Git. See [`docs/falkordb-deployment.md`](docs/falkordb-deployment.md) for exact local versus hosted connection steps.
 
 - `VERCEL_AI_GATEWAY_API_KEY`: create an API key in Vercel AI Gateway and put it in the root `.env` file as `VERCEL_AI_GATEWAY_API_KEY=...`. Compose passes this file only to the API container; it is never embedded in the browser bundle. Do not commit `.env` or paste the key into chat.
 - `MODEL_NAME`: Gateway model identifier, for example `openai/gpt-4o-mini`. Check Vercel Gateway for the model you want to use and its supported tool-calling/JSON output features.
 - `VERCEL_AI_GATEWAY_BASE_URL`: defaults to `https://ai-gateway.vercel.sh/v1`.
-- `FALKORDB_USERNAME` / `FALKORDB_PASSWORD`: optional ACL credentials. The local Compose FalkorDB service currently does not enable ACL authentication, so leave both blank locally. For a secured hosted service, use the account username/password supplied by its administrator/provider. These are database credentials, not Vercel credentials.
+- `FALKORDB_USERNAME` / `FALKORDB_PASSWORD`: for local Compose, leave blank. For FalkorDB Cloud, copy the displayed database username/password from the instance's **Instance Details** tab (the documented default username is `falkordb`; do not guess the password). These are database credentials, separate from Vercel. `FALKORDB_SSL=true` only if that Cloud tier/instance indicates TLS is enabled; Free-tier instances have no TLS. Always use the instance's actual **Connectivity** host and port.
 
 ## Architecture
 
