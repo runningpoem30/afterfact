@@ -37,7 +37,9 @@ class RecallStore:
 
     @staticmethod
     def rows(result: Any) -> list[dict[str, Any]]:
-        return [dict(zip(result.header, row)) for row in result.result_set]
+        # FalkorDB's client exposes each header as [type_code, alias], not just alias.
+        headers = [item[-1] if isinstance(item, (list, tuple)) else item for item in result.header]
+        return [dict(zip(headers, row)) for row in result.result_set]
 
     def create_workspace(self, workspace_id: str, name: str) -> dict[str, Any]:
         g = self._graph(workspace_id)
@@ -90,7 +92,20 @@ class RecallStore:
         return self.rows(self._graph(workspace_id).ro_query("MATCH (e:AuditEvent) RETURN e.id AS id, e.type AS type, e.payload AS payload, e.created_at AS created_at ORDER BY e.created_at DESC SKIP $after LIMIT $limit", {"after": after, "limit": limit}))
 
     def search_current_claims(self, workspace_id: str, query: str, limit: int) -> list[dict[str, Any]]:
-        return self.rows(self._graph(workspace_id).ro_query("MATCH (c:Claim) WHERE c.status IN ['proposed','accepted','contested'] AND toLower(c.statement) CONTAINS toLower($q) RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit", {"q": query, "limit": min(limit, 20)}))
+        g = self._graph(workspace_id)
+        bounded = min(limit, 20)
+        current_query = "MATCH (c:Claim) WHERE c.status IN ['proposed','accepted','contested'] AND toLower(c.statement) CONTAINS toLower($q) RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit"
+        rows = self.rows(g.ro_query(current_query, {"q": query.strip()[:200], "limit": bounded}))
+        if rows:
+            return rows
+        # Back off to individual non-stopword terms when the model's full phrase does not match.
+        terms = [term.lower().strip(".,:;!?()[]{}\"'\\\\") for term in query.split()]
+        terms = [term for term in terms if len(term) >= 3 and term not in {"the", "and", "for", "with", "from", "that", "this", "what", "when", "where", "date", "find", "show", "tell", "about"}]
+        for term in terms[:8]:
+            rows = self.rows(g.ro_query(current_query, {"q": term, "limit": bounded}))
+            if rows:
+                return rows
+        return []
 
     def source_evidence(self, workspace_id: str, claim_ids: list[str]) -> list[dict[str, Any]]:
         if not claim_ids:

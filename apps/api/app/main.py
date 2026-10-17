@@ -66,7 +66,7 @@ def health() -> dict[str, Any]:
     except Exception as exc:
         db_error = type(exc).__name__
     model_ok = bool(settings.vercel_ai_gateway_api_key)
-    return {"status": "ok" if db_ok else "degraded", "integrations": {"falkordb": {"configured": bool(settings.falkordb_host), "available": db_ok, "error": db_error}, "model": {"configured": model_ok, "provider": settings.model_provider if model_ok else None, "model": settings.model_name if model_ok else None, "base_url": settings.vercel_ai_gateway_base_url if model_ok else None}}, "capabilities": {"source_ingestion": db_ok and model_ok, "correction_repair": db_ok, "agents": db_ok and model_ok}}
+    return {"status": "ok" if db_ok else "degraded", "integrations": {"falkordb": {"configured": bool(settings.falkordb_host), "available": db_ok, "error": db_error}, "model": {"configured": model_ok, "provider": "vercel-ai-gateway" if model_ok else None, "model": settings.model_name if model_ok else None, "base_url": settings.vercel_ai_gateway_base_url if model_ok else None}}, "capabilities": {"source_ingestion": db_ok and model_ok, "correction_repair": db_ok, "agents": db_ok and model_ok}}
 
 
 @app.post("/api/v1/workspaces", status_code=201)
@@ -130,7 +130,6 @@ def process_source(payload: SourceIn) -> dict[str, Any]:
         if not quote or quote not in payload.content:
             raise HTTPException(422, detail={"code": "invalid_provenance", "message": "Model returned a claim whose evidence quote is not an exact source substring."})
     try:
-        payload.authority = "user_submitted"
         return store().ingest_source(payload, source_id, claims)
     except GraphUnavailable as exc:
         raise HTTPException(status_code=503, detail={"code": "falkordb_unavailable", "message": str(exc)}) from exc

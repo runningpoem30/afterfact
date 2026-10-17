@@ -75,6 +75,14 @@ class RecallAgents:
                 raise AgentUnavailable("Analyst returned malformed structured output") from exc
             if not isinstance(analyst_proposal, dict):
                 raise AgentUnavailable("Analyst response must be a JSON object")
+            # A search hit is not evidence by itself. Ensure the agent retrieves its persisted
+            # source fragments before the handoff even if the model omits the second tool call.
+            pending_ids = sorted(searched_claim_ids - retrieved_claim_ids)[:20]
+            if pending_ids:
+                result = self.store.source_evidence(workspace_id, pending_ids)
+                retrieved_claim_ids.update(row["claim_id"] for row in result)
+                evidence_ids.update(row["claim_id"] for row in result)
+                tool_records.append({"tool": "retrieve_source_fragments", "arguments": {"claim_ids": pending_ids}, "result_count": len(result), "result_ids": [row["claim_id"] for row in result]})
             analyst_duration_ms = int((time.monotonic() - started) * 1000)
 
             coordinator_started = time.monotonic()
@@ -97,6 +105,8 @@ class RecallAgents:
             coordinator_duration_ms = int((time.monotonic() - coordinator_started) * 1000)
             allowed_ids = searched_claim_ids & retrieved_claim_ids
             claim_ids = [str(item) for item in proposal.get("claim_ids", []) if str(item) in allowed_ids]
+            if not claim_ids:
+                claim_ids = [str(item) for item in analyst_proposal.get("claim_ids", []) if str(item) in allowed_ids]
             supported = bool(claim_ids)
             if not supported:
                 proposal["action_title"] = ""

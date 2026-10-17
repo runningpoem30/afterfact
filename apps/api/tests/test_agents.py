@@ -66,7 +66,6 @@ def test_analyst_retrieves_graph_evidence_then_coordinator_writes_proposals(monk
     agent.store = store
     completions = FakeCompletions([
         response(tool_calls=[FakeCall("search_claims", '{"query":"launch"}', "search-1")]),
-        response(tool_calls=[FakeCall("retrieve_source_fragments", '{"claim_ids":["claim-1"]}', "evidence-1")]),
         response('{"title":"Review launch timing","rationale":"The source says June.","claim_ids":["claim-1"],"action_title":"Confirm launch readiness","uncertainty":"Source is proposed."}'),
         response('{"title":"Review launch timing","rationale":"Evidence supports a review, not approval.","claim_ids":["claim-1"],"action_title":"Confirm launch readiness","uncertainty":"Source claim is still proposed."}'),
     ])
@@ -74,8 +73,9 @@ def test_analyst_retrieves_graph_evidence_then_coordinator_writes_proposals(monk
 
     result = agent.run_task("workspace-1", "Review the launch timing")
 
-    assert len(completions.calls) == 4
+    assert len(completions.calls) == 3
     assert len(result["tool_calls"]) == 2
+    assert result["tool_calls"][1]["tool"] == "retrieve_source_fragments"
     assert result["claim_ids"] == ["claim-1"]
     assert result["action_id"]
     assert result["status"] == "draft"
