@@ -8,6 +8,7 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Vercel AI Gateway OpenAI-compatible adapter configured via `VERCEL_AI_GATEWAY_API_KEY`; exact-substring quote validation; no provider/canned fallback.
 - Bounded model-driven Analyst tools (`search_claims`, source-fragment retrieval) hand a structured proposal to a separate Coordinator model call; separate run records, tool metadata, handoff artifacts, decision/action proposals and events are persisted.
 - Email/password signup/login with PBKDF2-hashed passwords, signed expiring account tokens, a server-selected account graph, and owner-checked workspace routes. Live test: signup 201, login 200, wrong password 401, owner workspace read 200, cross-account read 403; hash is not returned.
+- Landing no longer displays integration connected/configured claims; it only describes the product and current email/password entry.
 - Bounded graph endpoint; React Flow consumes backend-returned nodes/edges.
 - Text and supported text upload; exact evidence offsets.
 - Correction preview/apply with workspace+claim revision checks, duplicate-request idempotency, preserved historical source-fragment context, and terminal-state filtering; downstream repair is still conservative and not atomic.
@@ -18,6 +19,7 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 ## Verified
 - Frontend first-use and saved-workspace tests verify the landing appears before navigation and that continuing is explicit. Auth forms call the real signup/login routes.
 - Live email/password signup and login against FalkorDB account graph; duplicate signup, wrong password, owner workspace access and cross-account 403 verified using synthetic test identities. Password hash is not returned by API.
+- Authenticated landing flow rebuilt into Docker: account signup/login, account-owned workspace creation and workspace entry are covered by a frontend component test; real API signup/login/ownership smoke test passed.
 - Live Docker Compose stack started; FalkorDB container healthy, API health returns both FalkorDB and Vercel Gateway configured/available, frontend serves HTTP 200 at `http://localhost:5173`.
 - Real Vercel AI Gateway Chat Completions call returned HTTP 200 during synthetic source extraction.
 - Synthetic source was extracted into one claim; evidence quote was checked against exact submitted text; source/claim/audit write and graph-backed overview counts succeeded.
@@ -25,13 +27,14 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Complete API-level synthetic recovery workflow passed: workspace → live source extraction → agent handoff → correction preview → correction apply → persisted replacement and audit event. Duplicate apply returned `already_applied` with the same replacement; a workspace revision change after preview returned HTTP 409 `stale_correction_preview`. Replacement stayed proposed and linked to original source fragment as correction context; superseded claims were omitted from active claim search.
 - FalkorDB Python client returned typed headers as `[type_code, alias]`; row decoder fix was tested live through workspace authorization, ingestion and graph reads.
 - `apps/api/.venv/bin/pytest -q`: 13 passed (includes isolated auth/service doubles; live synthetic workflows below use real services).
-- `npm --prefix apps/web test -- --reporter=verbose`: 2 passed (standalone landing content and no sidebar on first visit, including saved-workspace explicit-continue behavior; stubbed health response).
+- `npm --prefix apps/web test -- --reporter=verbose`: 2 passed (landing without workspace nav/status badges; saved workspace requires explicit Continue; auth entry and health responses are test-isolated).
 - `npm --prefix apps/web run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed; Python dependencies pass `pip check`.
 - Local Docker Graph version logged by the container: FalkorDB 4.0.0; image tag is `falkordb/falkordb:v4.10.0`.
 - Official rules require FalkorDB as primary graph DB, public repository, setup/model/query documentation, demo video and declared track.
 
 ## Still blocked / not verified
+- The full browser test against real services (signup → ingest → agent → correction → fresh session) has not yet been automated; current UI journey test uses an HTTP stub, while live API steps were smoke-tested separately.
 - After the directory rename and local environment restart, Compose services are currently stopped. Re-run `docker compose up --build` from `graph-h` before using the live app.
 - Browser-driven create → ingest → agent → correction → repair → fresh-session journey has not been run in a real browser; frontend smoke test is component-level.
 - Correction state propagation was tested for claim history and revision/idempotency behavior, but downstream decision/action propagation is still limited to direct dependencies and has not been validated across a multi-hop dependency graph.
@@ -43,10 +46,10 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Explicit evidence groups, alternative-support evaluation, conflict resolution.
 - Durable job worker, SSE replay, serialized mutations and optimistic revision checks.
 - Atomic multi-record correction repair and durable idempotent repair jobs.
-- Full auth identity management; signed guest mode only.
+- Production auth hardening: verified email, password reset, signup/login rate limits, duplicate-signup concurrency guard, and account recovery.
 - Broader browser acceptance tests, evaluations, PDF/public URL ingestion.
 - Deployment, demo video, project blog, production security hardening.
-- Email/password or Google OAuth signup/login; current onboarding creates a signed guest workspace, not an authenticated account.
+
 
 ## Material limitations
 - The local test run created several isolated synthetic workspaces in the persistent FalkorDB volume; these are not preloaded production/sample data.

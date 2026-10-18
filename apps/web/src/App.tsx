@@ -27,10 +27,10 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [auth, setAuth] = useState<AuthSession | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_auth') || 'null'); } catch { return null; } });
     const [savedWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_workspace') || 'null'); } catch { return null; } });
-    const [authMode, setAuthMode] = useState<'signup' | 'login' | null>(null);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [authMode, setAuthMode] = useState<'signup' | 'login' | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -137,7 +137,7 @@ export default function App() {
       <div className="brand"><div className="brand-mark"><GitBranch size={19} strokeWidth={2.4}/></div><span>AFTERHACK</span><span className="brand-beta">BETA</span></div>
       <div className="workspace-picker" onClick={() => setShowCreate(true)} role="button" tabIndex={0}><div className="workspace-avatar">{workspace?.name?.slice(0,1).toUpperCase() || 'R'}</div><div className="workspace-info"><strong>{workspace?.name || 'Select workspace'}</strong><span>{workspace ? 'Private workspace' : 'Create your first'}</span></div><ChevronDown size={15}/></div>
       <nav>{initialNav.map(group => <div className="nav-group" key={group.section}><div className="nav-label">{group.section}</div>{group.items.map(item => <button className={`nav-item ${page === item.name ? 'active' : ''}`} key={item.name} onClick={() => setPage(item.name)}><item.icon size={17}/><span>{item.name}</span>{item.name === 'Investigations' && overview?.counts.investigations ? <em>{overview.counts.investigations}</em> : null}</button>)}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><button className="user-row user-button" onClick={logout} title="Log out"><div className="user-avatar">{auth?.user.email.slice(0,1).toUpperCase() || 'U'}</div><div><strong>{auth?.user.email || 'Account'}</strong><span>Log out</span></div><ChevronDown size={15}/></button></div>
+      <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><button className="user-row user-button" onClick={logout} title="Log out"><div className="user-avatar">{auth?.user.email.slice(0,1).toUpperCase() || 'U'}</div><div><strong>{auth?.user.email || 'Account'}</strong><span>Signed in · Log out</span></div><ChevronDown size={15}/></button></div>
     </aside>}
 
     <main className="main">
@@ -145,7 +145,7 @@ export default function App() {
       <div className="page-content">
         {error && <div className="alert alert-error"><AlertTriangle size={16}/><span>{error}</span><button onClick={() => setError('')}><X size={15}/></button></div>}
         {banner && <div className="alert alert-success"><Check size={16}/><span>{banner}</span><button onClick={() => setBanner('')}><X size={15}/></button></div>}
-        {!workspace ? <LandingPage health={health} authenticatedEmail={auth?.user.email ?? null} savedWorkspaceName={auth && savedWorkspace?.owner_id === auth.user.id ? savedWorkspace.name : null} onContinueWorkspace={enterSavedWorkspace} onAuthenticate={setAuthMode} onCreateWorkspace={createWorkspaceFromLanding} onLogout={logout} /> : <>
+        {!workspace ? <LandingPage accountServiceAvailable={health?.integrations.falkordb.available ?? false} authenticatedEmail={auth?.user.email ?? null} savedWorkspaceName={auth && savedWorkspace?.owner_id === auth.user.id ? savedWorkspace.name : null} onContinueWorkspace={enterSavedWorkspace} onAuthenticate={setAuthMode} onCreateWorkspace={createWorkspaceFromLanding} onLogout={logout} /> : <>
           <div className="page-heading"><div><div className="eyebrow">{page === 'Overview' ? 'YOUR KNOWLEDGE, ACCOUNTED FOR' : `WORKSPACE / ${page.toUpperCase()}`}</div><h1>{page === 'Overview' ? <>Good morning. <em>Here’s the state of memory.</em></> : page}</h1><p>{page === 'Overview' ? 'Every belief has a source. Every dependency has a path back.' : 'Inspect persisted knowledge and evidence in your isolated FalkorDB graph.'}</p></div><button className="secondary-button" onClick={() => loadWorkspace(workspace)}><Activity size={15}/> Refresh</button></div>
           {loading && <div className="loading-line"><LoaderCircle size={14} className="spin"/> Syncing with FalkorDB…</div>}
           {page === 'Overview' && <>
