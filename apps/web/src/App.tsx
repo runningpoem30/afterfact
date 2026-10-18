@@ -9,7 +9,7 @@ type Workspace = { id: string; name: string; revision: number; access_token: str
 type Overview = { workspace: { id: string; name: string; revision: number }; counts: Record<string, number>; attention: { id: string; type: string; title: string; status: string }[] };
 type GraphPayload = { nodes: { id: string; type: string; label: string; status: string; properties: Record<string, unknown> }[]; edges: { source: string; target: string; type: string }[] };
 type Claim = { id: string; statement: string; status: string; confidence: number; evidence_quote: string };
-const API = '';
+const API = import.meta.env.VITE_API_BASE_URL ?? '';
 
 async function api<T>(path: string, token?: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options?.headers } });
@@ -24,7 +24,8 @@ const initialNav = [
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [workspace, setWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_workspace') || localStorage.getItem('recall_workspace') || 'null'); } catch { return null; } });
+  const [savedWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_workspace') || 'null'); } catch { return null; } });
+    const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -32,7 +33,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [workspaceName, setWorkspaceName] = useState('My workspace');
+  const [workspaceName, setWorkspaceName] = useState('Afterhack workspace');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Claim | null>(null);
   const [correction, setCorrection] = useState('');
@@ -42,6 +43,8 @@ export default function App() {
   const [banner, setBanner] = useState('');
   const [agentTask, setAgentTask] = useState('');
   const [agentResult, setAgentResult] = useState<{ status: string; decision: { title?: string; rationale?: string; uncertainty?: string }; tool_calls: { tool: string; result_count: number }[]; claim_ids: string[]; analyst_run_id: string; coordinator_run_id: string } | null>(null);
+
+  const enterSavedWorkspace = () => { if (savedWorkspace) setWorkspace(savedWorkspace); };
 
   const loadWorkspace = useCallback(async (ws: Workspace) => {
     setLoading(true); setError('');
@@ -108,20 +111,20 @@ export default function App() {
   const edges = useMemo<Edge[]>(() => (graph?.edges ?? []).filter(e => nodes.some(n => n.id === e.source) && nodes.some(n => n.id === e.target)).map((e, i) => ({ id: `${e.source}-${e.target}-${i}`, source: e.source, target: e.target, label: e.type.replace(/_/g, ' ').toLowerCase(), animated: false, style: { stroke: '#b2aea4' }, labelStyle: { fill: '#777368', fontSize: 10 } })), [graph, nodes]);
   const filteredClaims = claims.filter(c => c.statement?.toLowerCase().includes(search.toLowerCase()));
 
-  return <div className="app-shell">
-    <aside className="sidebar">
+  return <div className={`app-shell ${workspace ? 'workspace-shell' : 'landing-shell'}`}>
+    {workspace && <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><GitBranch size={19} strokeWidth={2.4}/></div><span>AFTERHACK</span><span className="brand-beta">BETA</span></div>
       <div className="workspace-picker" onClick={() => setShowCreate(true)} role="button" tabIndex={0}><div className="workspace-avatar">{workspace?.name?.slice(0,1).toUpperCase() || 'R'}</div><div className="workspace-info"><strong>{workspace?.name || 'Select workspace'}</strong><span>{workspace ? 'Private workspace' : 'Create your first'}</span></div><ChevronDown size={15}/></div>
       <nav>{initialNav.map(group => <div className="nav-group" key={group.section}><div className="nav-label">{group.section}</div>{group.items.map(item => <button className={`nav-item ${page === item.name ? 'active' : ''}`} key={item.name} onClick={() => setPage(item.name)}><item.icon size={17}/><span>{item.name}</span>{item.name === 'Investigations' && overview?.counts.investigations ? <em>{overview.counts.investigations}</em> : null}</button>)}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><div className="user-row"><div className="user-avatar">A</div><div><strong>Guest session</strong><span>Local workspace</span></div><ChevronDown size={15}/></div></div>
-    </aside>
+      <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><div className="user-row"><div className="user-avatar"><LockKeyhole size={14}/></div><div><strong>Guest workspace</strong><span>Private session</span></div></div></div>
+    </aside>}
 
     <main className="main">
-      <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> {page}</div><div className="topbar-right"><div className={`system-status ${health?.integrations.falkordb.available ? 'connected' : 'disconnected'}`}><span className="status-light"/>{health?.integrations.falkordb.available ? 'FalkorDB connected' : 'Database unavailable'}</div><button className="icon-button" title="Help"><CircleHelp size={18}/></button><div className="top-avatar">A</div></div></header>
+      {workspace && <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> {page}</div><div className="topbar-right"><div className={`system-status ${health?.integrations.falkordb.available ? 'connected' : 'disconnected'}`}><span className="status-light"/>{health?.integrations.falkordb.available ? 'FalkorDB connected' : 'Database unavailable'}</div><button className="icon-button" title="Help"><CircleHelp size={18}/></button><div className="top-avatar"><LockKeyhole size={13}/></div></div></header>}
       <div className="page-content">
         {error && <div className="alert alert-error"><AlertTriangle size={16}/><span>{error}</span><button onClick={() => setError('')}><X size={15}/></button></div>}
         {banner && <div className="alert alert-success"><Check size={16}/><span>{banner}</span><button onClick={() => setBanner('')}><X size={15}/></button></div>}
-        {!workspace ? <LandingPage health={health} onCreateWorkspace={() => setShowCreate(true)} /> : <>
+        {!workspace ? <LandingPage health={health} savedWorkspaceName={savedWorkspace?.name ?? null} onContinueWorkspace={enterSavedWorkspace} onCreateWorkspace={() => setShowCreate(true)} /> : <>
           <div className="page-heading"><div><div className="eyebrow">{page === 'Overview' ? 'YOUR KNOWLEDGE, ACCOUNTED FOR' : `WORKSPACE / ${page.toUpperCase()}`}</div><h1>{page === 'Overview' ? <>Good morning. <em>Here’s the state of memory.</em></> : page}</h1><p>{page === 'Overview' ? 'Every belief has a source. Every dependency has a path back.' : 'Inspect persisted knowledge and evidence in your isolated FalkorDB graph.'}</p></div><button className="secondary-button" onClick={() => loadWorkspace(workspace)}><Activity size={15}/> Refresh</button></div>
           {loading && <div className="loading-line"><LoaderCircle size={14} className="spin"/> Syncing with FalkorDB…</div>}
           {page === 'Overview' && <>

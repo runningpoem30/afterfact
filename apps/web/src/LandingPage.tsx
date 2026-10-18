@@ -8,9 +8,11 @@ type Props = {
     };
   } | null;
   onCreateWorkspace: () => void;
+  savedWorkspaceName: string | null;
+  onContinueWorkspace: () => void;
 };
 
-export default function LandingPage({ health, onCreateWorkspace }: Props) {
+export default function LandingPage({ health, onCreateWorkspace, savedWorkspaceName, onContinueWorkspace }: Props) {
   const graphReady = health?.integrations.falkordb.available ?? false;
   const modelReady = health?.integrations.model.configured ?? false;
 
@@ -28,9 +30,12 @@ export default function LandingPage({ health, onCreateWorkspace }: Props) {
             <h1>When the evidence<br />changes, <em>work should<br />change with it.</em></h1>
             <p>Afterhack connects source evidence to agent memory, decisions, and proposed actions—so engineers can inspect what changed and repair downstream work with a traceable record.</p>
             <div className="welcome-actions">
-              <button className="primary-button" onClick={onCreateWorkspace} disabled={!graphReady}>
-                <Plus size={16} /> Start a private workspace <ArrowUpRight size={14} />
-              </button>
+              <div className="landing-actions">
+                <button className="primary-button" onClick={onCreateWorkspace} disabled={!graphReady}>
+                  <Plus size={16} /> Start a private workspace <ArrowUpRight size={14} />
+                </button>
+                {savedWorkspaceName && <button className="landing-secondary-button" onClick={onContinueWorkspace}>Continue to {savedWorkspaceName}</button>}
+              </div>
               <span><ShieldCheck size={15} /> Isolated guest workspace · no shared example graph</span>
             </div>
             <div className="hero-proof">

@@ -24,9 +24,19 @@ The checked-in [`env.template`](env.template) lists all supported variables with
 - `VERCEL_AI_GATEWAY_BASE_URL`: defaults to `https://ai-gateway.vercel.sh/v1`.
 - `FALKORDB_USERNAME` / `FALKORDB_PASSWORD`: for local Compose, leave blank. For FalkorDB Cloud, copy the displayed database username/password from the instance's **Instance Details** tab (the documented default username is `falkordb`; do not guess the password). These are database credentials, separate from Vercel. `FALKORDB_SSL=true` only if that Cloud tier/instance indicates TLS is enabled; Free-tier instances have no TLS. Always use the instance's actual **Connectivity** host and port.
 
-## Deployment plan
+## Deployment plan and required configuration
 
-The recommended split is Vercel for the static frontend, a persistent Python/FastAPI container service for authenticated application logic, FalkorDB Cloud for the graph, and server-side Vercel AI Gateway calls. See [`docs/deployment-plan.md`](docs/deployment-plan.md) for why FalkorDB does not replace the API, the order of deployment work, and the honest guest-vs-OAuth recommendation. No cloud service has been provisioned yet.
+The current first screen is a standalone Afterhack landing page. Workspace navigation appears only after a user explicitly creates a private guest workspace or chooses “Continue” to reopen a saved one. Google OAuth signup is not yet implemented. The standalone page is `apps/web/src/LandingPage.tsx`; workspace navigation/rendering is in `apps/web/src/App.tsx`.
+
+The recommended deployment split is Vercel for the static frontend, a persistent Python/FastAPI container service (Northflank is a candidate) for application logic, FalkorDB Cloud for the graph, and server-side Vercel AI Gateway calls. See [`docs/deployment-plan.md`](docs/deployment-plan.md) for the sequence and security boundaries. No cloud deployment has been provisioned yet.
+
+Before we implement Google signup/deployment, the items you will need to supply/configure are:
+- Google OAuth **Client ID** and **Client Secret** in server-side environment secrets, plus the authorized callback URL after we choose the production API/domain. Never commit/paste the secret in chat.
+- A FalkorDB Cloud instance and its endpoint host, port, database username/password, TLS enabled/disabled state, and tier/persistence choice. Put those only in the API host secret settings.
+- Northflank account/project/service only if you choose it for the API; Vercel project/team for the frontend. No cloud account API token is needed for local development.
+- Public frontend/API domains and the exact OAuth redirect URI(s), once deployment domains are chosen.
+
+Do not send credentials in this chat. When you have them, enter them directly in the relevant provider’s secrets/environment UI or in your local ignored `.env` for testing.
 
 ## Architecture
 

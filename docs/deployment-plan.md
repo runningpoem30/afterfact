@@ -14,7 +14,7 @@ FalkorDB is the source of truth for sources, claims, graph links, decisions, act
 
 ## Frontend: Vercel
 
-The current Vite app can be deployed as a Vercel static site. Configure the project root to `apps/web` and use the Vite build command/output (`npm run build`, `dist`). Set `VITE_API_BASE_URL` to the public HTTPS API origin and update the frontend API helper to use that value. Do not put the Gateway or FalkorDB credentials in any `VITE_*` variable; Vite embeds those values in the browser bundle.
+The current Vite app can be deployed as a Vercel static site. Configure the project root to `apps/web` and use the Vite build command/output (`npm run build`, `dist`). Set `VITE_API_BASE_URL` to the public HTTPS API origin; the frontend API client reads this variable. Do not put the Gateway or FalkorDB credentials in any `VITE_*` variable; Vite embeds those values in the browser bundle.
 
 The frontend currently proxies `/api` only in local Vite development. A production deployment needs an API origin or a same-origin Vercel rewrite. Prefer a single public site origin with a Vercel rewrite to the API if the API host supports it, so browser session/auth rules and CORS stay simple.
 
