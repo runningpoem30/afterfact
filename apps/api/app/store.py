@@ -16,6 +16,10 @@ class GraphUnavailable(RuntimeError):
     pass
 
 
+class StaleCorrectionPreview(RuntimeError):
+    pass
+
+
 class RecallStore:
     """FalkorDB repository. Workspace IDs are mapped to graph names server-side."""
 
@@ -84,9 +88,10 @@ class RecallStore:
         return self.rows(self._graph(workspace_id).ro_query("MATCH (s:Source)-[:HAS_VERSION]->(v:SourceVersion) RETURN s.id AS id, s.name AS name, v.id AS version_id, v.created_at AS created_at, v.status AS status ORDER BY v.created_at DESC LIMIT 100"))
 
     def claims(self, workspace_id: str, q: str | None, limit: int) -> list[dict[str, Any]]:
+        active_states = "c.status IN ['proposed','accepted','contested']"
         if q:
-            return self.rows(self._graph(workspace_id).ro_query("MATCH (c:Claim) WHERE toLower(c.statement) CONTAINS toLower($q) RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit", {"q": q, "limit": limit}))
-        return self.rows(self._graph(workspace_id).ro_query("MATCH (c:Claim) RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit", {"limit": limit}))
+            return self.rows(self._graph(workspace_id).ro_query(f"MATCH (c:Claim) WHERE {active_states} AND toLower(c.statement) CONTAINS toLower($q) RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit", {"q": q, "limit": limit}))
+        return self.rows(self._graph(workspace_id).ro_query(f"MATCH (c:Claim) WHERE {active_states} RETURN c.id AS id, c.statement AS statement, c.subject AS subject, c.predicate AS predicate, c.value AS value, c.status AS status, c.confidence AS confidence, c.evidence_quote AS evidence_quote LIMIT $limit", {"limit": limit}))
 
     def events(self, workspace_id: str, after: int, limit: int) -> list[dict[str, Any]]:
         return self.rows(self._graph(workspace_id).ro_query("MATCH (e:AuditEvent) RETURN e.id AS id, e.type AS type, e.payload AS payload, e.created_at AS created_at ORDER BY e.created_at DESC SKIP $after LIMIT $limit", {"after": after, "limit": limit}))
@@ -150,17 +155,28 @@ class RecallStore:
 
     def apply_correction(self, payload: Any) -> dict[str, Any]:
         g = self._graph(payload.workspace_id)
-        preview = self.preview_correction(payload)
-        old = preview["claim"]
+        old_claim = self.rows(g.ro_query("MATCH (c:Claim {id:$id}) RETURN c.id AS id, c.status AS status, c.revision AS revision", {"id": payload.claim_id}))
+        if not old_claim:
+            raise GraphUnavailable("Claim not found")
+        old = old_claim[0]
         if old["status"] == "superseded":
-            raise GraphUnavailable("Claim has already been superseded; refresh and review the current revision")
+            existing = self.rows(g.ro_query("MATCH (corr:Correction)-[:CORRECTS]->(old:Claim {id:$id}), (old)-[:SUPERSEDES]->(replacement:Claim) WHERE corr.corrected_statement=$statement RETURN corr.id AS correction_id, replacement.id AS replacement_id, corr.created_at AS created_at", {"id": payload.claim_id, "statement": payload.corrected_statement}))
+            if existing:
+                return {"correction_id": existing[0]["correction_id"], "superseded_claim_id": payload.claim_id, "replacement_claim_id": existing[0]["replacement_id"], "affected": [], "status": "already_applied", "idempotent": True}
+            raise StaleCorrectionPreview("Claim has already changed; preview its current revision again")
+        current_revision = self.rows(g.ro_query("MATCH (w:Workspace {id:$id}) RETURN w.revision AS revision", {"id": payload.workspace_id}))
+        if not current_revision or current_revision[0]["revision"] != payload.expected_workspace_revision or old["revision"] != payload.expected_claim_revision:
+            raise StaleCorrectionPreview("Workspace or claim changed after preview; refresh the impact preview before applying")
+        preview = self.preview_correction(payload)
         correction_id = __import__("uuid").uuid4().hex
         replacement_id = __import__("uuid").uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
-        g.query("MATCH (old:Claim {id:$id}) CREATE (corr:Correction {id:$correction_id, corrected_statement:$statement, reviewer_note:$reviewer_note, created_at:$created, status:'applied'}) CREATE (replacement:Claim {id:$replacement_id, statement:$statement, subject:old.subject, predicate:old.predicate, value:'unresolved', entity_scope:old.entity_scope, valid_time:'unknown', recorded_at:$created, status:'proposed', confidence:1.0, revision:old.revision + 1}) CREATE (old)-[:SUPERSEDES]->(replacement) CREATE (corr)-[:CORRECTS]->(old) CREATE (replacement)-[:DERIVED_FROM]->(corr) SET old.status='superseded', old.revision=old.revision + 1", {"id": payload.claim_id, "correction_id": correction_id, "replacement_id": replacement_id, "statement": payload.corrected_statement, "reviewer_note": payload.reviewer_note, "created": now})
+        g.query("MATCH (w:Workspace {id:$workspace_id}) MATCH (old:Claim {id:$id}) WHERE w.revision=$workspace_revision AND old.status <> 'superseded' AND old.revision=$claim_revision MATCH (old)-[:SUPPORTED_BY]->(f:SourceFragment) CREATE (corr:Correction {id:$correction_id, corrected_statement:$statement, reviewer_note:$reviewer_note, created_at:$created, status:'applied'}) CREATE (replacement:Claim {id:$replacement_id, statement:$statement, subject:old.subject, predicate:old.predicate, value:'unresolved', entity_scope:old.entity_scope, evidence_quote:old.evidence_quote, evidence_start:old.evidence_start, evidence_end:old.evidence_end, valid_time:'unknown', recorded_at:$created, status:'proposed', confidence:1.0, revision:old.revision + 1}) CREATE (old)-[:SUPERSEDES]->(replacement) CREATE (corr)-[:CORRECTS]->(old) CREATE (replacement)-[:DERIVED_FROM]->(corr) CREATE (replacement)-[:SUPPORTED_BY {role:'correction_context'}]->(f) SET old.status='superseded', old.revision=old.revision + 1, w.revision=w.revision + 1 RETURN corr.id AS correction_id", {"workspace_id": payload.workspace_id, "workspace_revision": payload.expected_workspace_revision, "id": payload.claim_id, "claim_revision": payload.expected_claim_revision, "correction_id": correction_id, "replacement_id": replacement_id, "statement": payload.corrected_statement, "reviewer_note": payload.reviewer_note, "created": now})
+        committed = self.rows(g.ro_query("MATCH (old:Claim {id:$id})-[:SUPERSEDES]->(replacement:Claim {id:$replacement_id}) RETURN replacement.id AS id", {"id": payload.claim_id, "replacement_id": replacement_id}))
+        if not committed:
+            raise StaleCorrectionPreview("Claim changed while applying; refresh the impact preview")
         # Conservative propagation: decisions using the superseded claim require review; pending actions are held.
         g.query("MATCH (c:Claim {id:$id})<-[:USED_CLAIM]-(d:Decision) SET d.status='needs_review'", {"id": payload.claim_id})
         g.query("MATCH (c:Claim {id:$id})<-[:USED_CLAIM]-(d:Decision)<-[:REQUIRES]-(a:Action) WHERE a.status IN ['proposed','approved'] SET a.status='held'", {"id": payload.claim_id})
-        g.query("MATCH (w:Workspace {id:$id}) SET w.revision = w.revision + 1", {"id": payload.workspace_id})
         self._event(g, "correction.applied", {"correction_id": correction_id, "claim_id": payload.claim_id, "replacement_id": replacement_id})
         return {"correction_id": correction_id, "superseded_claim_id": payload.claim_id, "replacement_claim_id": replacement_id, "affected": preview["affected"], "status": "applied", "note": "Replacement remains proposed until evidence and dependencies are reviewed."}

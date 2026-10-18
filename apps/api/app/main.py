@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .settings import settings
-from .store import GraphUnavailable, RecallStore
+from .store import GraphUnavailable, RecallStore, StaleCorrectionPreview
 from .extractor import ExtractorUnavailable, ModelExtractor
 from .agents import AgentUnavailable, RecallAgents
 
@@ -46,6 +46,11 @@ class CorrectionIn(BaseModel):
     claim_id: str
     corrected_statement: str = Field(min_length=8, max_length=2000)
     reviewer_note: str | None = Field(default=None, max_length=500)
+
+
+class ApplyCorrectionIn(CorrectionIn):
+    expected_workspace_revision: int = Field(ge=0)
+    expected_claim_revision: int = Field(ge=1)
 
 
 def safe_graph_id(workspace_id: str) -> str:
@@ -208,7 +213,12 @@ def preview_correction(payload: CorrectionIn, authorization: str | None = Header
 
 
 @app.post("/api/v1/corrections/apply")
-def apply_correction(payload: CorrectionIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def apply_correction(payload: ApplyCorrectionIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     safe_graph_id(payload.workspace_id)
     authorize_workspace(payload.workspace_id, authorization.removeprefix("Bearer ") if authorization else None)
-    return store().apply_correction(payload)
+    try:
+        return store().apply_correction(payload)
+    except StaleCorrectionPreview as exc:
+        raise HTTPException(409, detail={"code": "stale_correction_preview", "message": str(exc)}) from exc
+    except GraphUnavailable as exc:
+        raise HTTPException(404, detail={"code": "claim_not_found", "message": str(exc)}) from exc

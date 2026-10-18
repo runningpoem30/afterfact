@@ -93,8 +93,14 @@ export default function App() {
     finally { setLoading(false); }
   };
   const applyCorrection = async () => {
-    if (!workspace || !selected) return;
-    try { await api('/api/v1/corrections/apply', workspace.access_token, { method: 'POST', body: JSON.stringify({ workspace_id: workspace.id, claim_id: selected.id, corrected_statement: correction }) }); setBanner('Correction recorded; affected work has been marked for review.'); setPreview(null); setSelected(null); setCorrection(''); await refreshClaims(); } catch (e) { setError(e instanceof Error ? e.message : 'Correction failed'); }
+    if (!workspace || !selected || !preview) return;
+    const claimPreview = preview.claim as { revision?: number } | undefined;
+    const workspaceRevision = Number(preview.workspace_revision);
+    if (!claimPreview?.revision || !Number.isInteger(workspaceRevision)) { setError('Correction preview is missing its revision. Refresh the preview before applying.'); return; }
+    try {
+      const result = await api<{ status: string }>('/api/v1/corrections/apply', workspace.access_token, { method: 'POST', body: JSON.stringify({ workspace_id: workspace.id, claim_id: selected.id, corrected_statement: correction, expected_workspace_revision: workspaceRevision, expected_claim_revision: claimPreview.revision }) });
+      setBanner(result.status === 'already_applied' ? 'This correction was already applied.' : 'Correction recorded; affected work has been marked for review.'); setPreview(null); setSelected(null); setCorrection(''); await refreshClaims();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Correction failed'); }
   };
 
   const nodes = useMemo<Node[]>(() => (graph?.nodes ?? []).map((n, index) => ({ id: n.id, position: { x: 120 + (index % 4) * 250, y: 90 + Math.floor(index / 4) * 170 }, data: { label: <div className="graph-node"><span className={`node-dot ${n.type.toLowerCase()}`} /> <strong>{n.type}</strong><span>{n.label || n.id}</span><small>{n.status}</small></div> }, className: `node-${n.status}` })), [graph]);
