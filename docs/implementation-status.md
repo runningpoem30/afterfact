@@ -1,6 +1,6 @@
 # RECALL implementation status
 
-Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned Git commit and configured origin appeared during implementation and were preserved.
+Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to `graph-h`; Git history, branch and remote remain intact.
 
 ## Implemented (code-level)
 - FalkorDB is the required graph store, with one server-derived graph per UUID workspace; no in-memory fallback. Host, port, ACL username/password, and TLS are environment-configurable.
@@ -21,14 +21,15 @@ Updated: 2026-10-17. Initial inspection found an empty directory; a user-owned G
 - Separate real Analyst and Coordinator model calls completed on synthetic workspaces. Analyst found graph claims, retrieved exact source fragments, and Coordinator persisted `draft` decisions linked to actual claim IDs. Real handoff IDs and run records were returned; unsupported evidence stayed `needs_review` and created no action.
 - Complete API-level synthetic recovery workflow passed: workspace → live source extraction → agent handoff → correction preview → correction apply → persisted replacement and audit event. Duplicate apply returned `already_applied` with the same replacement; a workspace revision change after preview returned HTTP 409 `stale_correction_preview`. Replacement stayed proposed and linked to original source fragment as correction context; superseded claims were omitted from active claim search.
 - FalkorDB Python client returned typed headers as `[type_code, alias]`; row decoder fix was tested live through workspace authorization, ingestion and graph reads.
-- `.venv/bin/pytest -q`: 11 passed (unit tests include isolated doubles; separately the live synthetic API workflows above used real services).
-- `npm test -- --reporter=verbose`: 1 passed (first-use UI; stubbed health response).
-- `npm run build`: TypeScript and Vite production build passed.
+- `apps/api/.venv/bin/pytest -q`: 11 passed (unit tests include isolated doubles; live synthetic API workflows above used real services).
+- `npm --prefix apps/web test -- --reporter=verbose`: 1 passed (first-use UI; stubbed health response).
+- `npm --prefix apps/web run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed; Python dependencies pass `pip check`.
 - Local Docker Graph version logged by the container: FalkorDB 4.0.0; image tag is `falkordb/falkordb:v4.10.0`.
 - Official rules require FalkorDB as primary graph DB, public repository, setup/model/query documentation, demo video and declared track.
 
 ## Still blocked / not verified
+- After the directory rename and local environment restart, Compose services are currently stopped. Re-run `docker compose up --build` from `graph-h` before using the live app.
 - Browser-driven create → ingest → agent → correction → repair → fresh-session journey has not been run in a real browser; frontend smoke test is component-level.
 - Correction state propagation was tested for claim history and revision/idempotency behavior, but downstream decision/action propagation is still limited to direct dependencies and has not been validated across a multi-hop dependency graph.
 - Database restart/recovery/persistence has not yet been explicitly tested, though Compose uses a named volume and AOF settings.

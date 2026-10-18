@@ -2,7 +2,7 @@
 
 **Repair the consequences of incorrect AI memory.** RECALL is an evidence-backed agent memory and coordination workspace. Its graph stores the relationships between sources, source versions, fragments, claims, corrections, decisions, and actions so that changed evidence can be traced to dependent work.
 
-> **Current implementation status:** early vertical slice. Workspace creation, FalkorDB graph persistence code, Vercel AI Gateway structured extraction code, source provenance, bounded Analyst/Coordinator handoff, claim browsing, graph visualization, and correction preview/application are implemented in code. A live end-to-end run is **not yet verified**: Docker is installed but the daemon is unavailable in the development environment, and a Vercel AI Gateway key is not configured. The app reports unavailable integrations honestly; ingestion is disabled until a real model call is configured.
+> **Current implementation status:** working live API vertical slice. Synthetic end-to-end API tests have verified live Vercel AI Gateway extraction, exact source-quote provenance, FalkorDB graph writes/reads, Analyst → Coordinator handoff, evidence-linked draft decisions, correction preview/apply, duplicate correction retries, and stale-preview rejection. The complete browser journey, restart durability, multi-hop support evaluation, atomic repair, and public deployment are still unverified or incomplete; see [`docs/implementation-status.md`](docs/implementation-status.md).
 
 ## Run locally
 
@@ -30,7 +30,7 @@ The checked-in [`env.template`](env.template) lists all supported variables with
 - `apps/api`: FastAPI routes, Vercel AI Gateway structured extraction and bounded tool-calling adapters, signed guest workspace tokens, FalkorDB repository.
 - `compose.yaml`: pinned FalkorDB image with append-only persistence and a named volume, API, and static web build.
 - The backend derives graph names from UUID workspace IDs; requests cannot select a graph by arbitrary name. Signed workspace guest tokens are isolated and expire after 24 hours. Production deployment should use a full identity provider and a strong random session secret.
-- The initial Analyst → Coordinator task route calls the configured model with a bounded tool set, retrieves claims/fragments from FalkorDB, and stores handoff, separate run records, decision proposals, optional dependent task proposals, and event entries. It has not been tested against a live model or database in this environment.
+- The Analyst → Coordinator route uses real Vercel AI Gateway model calls, bounded FalkorDB-backed tools, source-fragment retrieval, and persisted handoff/run/decision/action proposal records. Synthetic live tests have exercised this route; broader browser acceptance and operational recovery remain outstanding.
 
 ## Graph model and query catalog
 
@@ -40,7 +40,7 @@ Core patterns: `Workspace-[:HAS_VERSION]->SourceVersion-[:HAS_FRAGMENT]->SourceF
 
 ## Verification
 
-`python3 -m compileall -q apps/api/app` checks syntax. `npm --prefix apps/web run build` checks the frontend. Integration acceptance tests require a real FalkorDB instance and a live model key. Model calls are not made by unit tests. Results must be reported separately by actual DB/model usage.
+Run backend unit tests with `apps/api/.venv/bin/pytest -q`, frontend tests with `npm --prefix apps/web test`, and the production build with `npm --prefix apps/web run build`. Unit tests use isolated doubles where needed; live synthetic acceptance results are listed separately in `docs/implementation-status.md`.
 
 ## Event submission
 
