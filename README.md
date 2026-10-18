@@ -1,6 +1,6 @@
-# RECALL
+# Afterhack
 
-**Repair the consequences of incorrect AI memory.** RECALL is an evidence-backed agent memory and coordination workspace. Its graph stores the relationships between sources, source versions, fragments, claims, corrections, decisions, and actions so that changed evidence can be traced to dependent work.
+**Repair the consequences of incorrect AI memory.** Afterhack is an evidence-backed agent memory and coordination workspace. Its graph stores the relationships between sources, source versions, fragments, claims, corrections, decisions, and actions so that changed evidence can be traced to dependent work.
 
 > **Current implementation status:** working live API vertical slice. Synthetic end-to-end API tests have verified live Vercel AI Gateway extraction, exact source-quote provenance, FalkorDB graph writes/reads, Analyst → Coordinator handoff, evidence-linked draft decisions, correction preview/apply, duplicate correction retries, and stale-preview rejection. The complete browser journey, restart durability, multi-hop support evaluation, atomic repair, and public deployment are still unverified or incomplete; see [`docs/implementation-status.md`](docs/implementation-status.md).
 
@@ -23,6 +23,10 @@ The checked-in [`env.template`](env.template) lists all supported variables with
 - `MODEL_NAME`: Gateway model identifier, for example `openai/gpt-4o-mini`. Check Vercel Gateway for the model you want to use and its supported tool-calling/JSON output features.
 - `VERCEL_AI_GATEWAY_BASE_URL`: defaults to `https://ai-gateway.vercel.sh/v1`.
 - `FALKORDB_USERNAME` / `FALKORDB_PASSWORD`: for local Compose, leave blank. For FalkorDB Cloud, copy the displayed database username/password from the instance's **Instance Details** tab (the documented default username is `falkordb`; do not guess the password). These are database credentials, separate from Vercel. `FALKORDB_SSL=true` only if that Cloud tier/instance indicates TLS is enabled; Free-tier instances have no TLS. Always use the instance's actual **Connectivity** host and port.
+
+## Deployment plan
+
+The recommended split is Vercel for the static frontend, a persistent Python/FastAPI container service for authenticated application logic, FalkorDB Cloud for the graph, and server-side Vercel AI Gateway calls. See [`docs/deployment-plan.md`](docs/deployment-plan.md) for why FalkorDB does not replace the API, the order of deployment work, and the honest guest-vs-OAuth recommendation. No cloud service has been provisioned yet.
 
 ## Architecture
 

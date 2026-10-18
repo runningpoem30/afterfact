@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, type Edge, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import LandingPage from './LandingPage';
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp, Clock3, Database, FilePlus2, GitBranch, LayoutDashboard, LoaderCircle, LockKeyhole, Network, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
 
 type Health = { status: string; integrations: { falkordb: { available: boolean }; model: { configured: boolean; model?: string } }; capabilities: Record<string, boolean> };
@@ -23,7 +24,7 @@ const initialNav = [
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [workspace, setWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('recall_workspace') || 'null'); } catch { return null; } });
+  const [workspace, setWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_workspace') || localStorage.getItem('recall_workspace') || 'null'); } catch { return null; } });
   const [overview, setOverview] = useState<Overview | null>(null);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -63,7 +64,7 @@ export default function App() {
     setLoading(true); setError('');
     try {
       const ws = await api<Workspace>('/api/v1/workspaces', undefined, { method: 'POST', body: JSON.stringify({ name: workspaceName }) });
-      localStorage.setItem('recall_workspace', JSON.stringify(ws)); setWorkspace(ws); setShowCreate(false); setBanner('Workspace created. Your knowledge stays isolated in its own FalkorDB graph.');
+      localStorage.setItem('afterhack_workspace', JSON.stringify(ws)); setWorkspace(ws); setShowCreate(false); setBanner('Workspace created. Your knowledge stays isolated in its own FalkorDB graph.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Workspace creation failed'); }
     finally { setLoading(false); }
   };
@@ -109,7 +110,7 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><GitBranch size={19} strokeWidth={2.4}/></div><span>RECALL</span><span className="brand-beta">BETA</span></div>
+      <div className="brand"><div className="brand-mark"><GitBranch size={19} strokeWidth={2.4}/></div><span>AFTERHACK</span><span className="brand-beta">BETA</span></div>
       <div className="workspace-picker" onClick={() => setShowCreate(true)} role="button" tabIndex={0}><div className="workspace-avatar">{workspace?.name?.slice(0,1).toUpperCase() || 'R'}</div><div className="workspace-info"><strong>{workspace?.name || 'Select workspace'}</strong><span>{workspace ? 'Private workspace' : 'Create your first'}</span></div><ChevronDown size={15}/></div>
       <nav>{initialNav.map(group => <div className="nav-group" key={group.section}><div className="nav-label">{group.section}</div>{group.items.map(item => <button className={`nav-item ${page === item.name ? 'active' : ''}`} key={item.name} onClick={() => setPage(item.name)}><item.icon size={17}/><span>{item.name}</span>{item.name === 'Investigations' && overview?.counts.investigations ? <em>{overview.counts.investigations}</em> : null}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><div className="user-row"><div className="user-avatar">A</div><div><strong>Guest session</strong><span>Local workspace</span></div><ChevronDown size={15}/></div></div>
@@ -120,7 +121,7 @@ export default function App() {
       <div className="page-content">
         {error && <div className="alert alert-error"><AlertTriangle size={16}/><span>{error}</span><button onClick={() => setError('')}><X size={15}/></button></div>}
         {banner && <div className="alert alert-success"><Check size={16}/><span>{banner}</span><button onClick={() => setBanner('')}><X size={15}/></button></div>}
-        {!workspace ? <section className="welcome-card"><div className="eyebrow"><Sparkles size={14}/> MEMORY, WITH A PAPER TRAIL</div><h1>When the evidence changes,<br/><em>the work should know.</em></h1><p>RECALL traces what your agents believe back to evidence—and helps you repair the decisions and actions that depended on it.</p><div className="welcome-actions"><button className="primary-button" onClick={() => setShowCreate(true)}><Plus size={16}/> Create private workspace</button><span><ShieldCheck size={15}/> Isolated graph · No shared demo data</span></div>{health && <div className="integration-card"><div className="integration-icon"><Database size={17}/></div><div><strong>Live integrations</strong><span>Connect FalkorDB and a model provider to unlock source ingestion and agent reasoning.</span></div><div className="integration-state"><span className={health.integrations.falkordb.available ? 'ok-dot' : 'bad-dot'}/><span>FalkorDB {health.integrations.falkordb.available ? 'ready' : 'unavailable'}</span><span className={health.integrations.model.configured ? 'ok-dot' : 'bad-dot'}/><span>Model {health.integrations.model.configured ? 'ready' : 'unconfigured'}</span></div></div>}</section> : <>
+        {!workspace ? <LandingPage health={health} onCreateWorkspace={() => setShowCreate(true)} /> : <>
           <div className="page-heading"><div><div className="eyebrow">{page === 'Overview' ? 'YOUR KNOWLEDGE, ACCOUNTED FOR' : `WORKSPACE / ${page.toUpperCase()}`}</div><h1>{page === 'Overview' ? <>Good morning. <em>Here’s the state of memory.</em></> : page}</h1><p>{page === 'Overview' ? 'Every belief has a source. Every dependency has a path back.' : 'Inspect persisted knowledge and evidence in your isolated FalkorDB graph.'}</p></div><button className="secondary-button" onClick={() => loadWorkspace(workspace)}><Activity size={15}/> Refresh</button></div>
           {loading && <div className="loading-line"><LoaderCircle size={14} className="spin"/> Syncing with FalkorDB…</div>}
           {page === 'Overview' && <>

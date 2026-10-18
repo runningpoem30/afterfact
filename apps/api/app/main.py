@@ -18,7 +18,7 @@ from .agents import AgentUnavailable, RecallAgents
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("recall")
-app = FastAPI(title="RECALL API", version="1.0.0", description="Evidence-backed agent memory repair")
+app = FastAPI(title="Afterhack API", version="1.0.0", description="Evidence-backed agent memory coordination and correction review")
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 sessions = URLSafeTimedSerializer(settings.session_secret, salt="recall-workspace")
 
