@@ -7,6 +7,7 @@ class FakeAccountStore:
     def __init__(self):
         self.users = {}
         self.workspaces = {}
+        self.user_workspaces = {}
 
     def find_user_by_email(self, email):
         return self.users.get(email)
@@ -17,9 +18,17 @@ class FakeAccountStore:
         return user
 
     def create_workspace(self, workspace_id, name, owner_id=None):
-        result = {"id": workspace_id, "name": name, "owner_id": owner_id, "revision": 0}
+        result = {"id": workspace_id, "name": name, "owner_id": owner_id, "created_at": "2026-01-01T00:00:00+00:00", "revision": 0}
         self.workspaces[workspace_id] = result
         return result
+
+    def register_workspace(self, user_id, workspace):
+        references = self.user_workspaces.setdefault(user_id, [])
+        if not any(existing["id"] == workspace["id"] for existing in references):
+            references.append(workspace)
+
+    def workspaces_for_user(self, user_id):
+        return list(reversed(self.user_workspaces.get(user_id, [])))
 
     def get_workspace(self, workspace_id):
         from app.store import GraphUnavailable
@@ -62,6 +71,16 @@ def test_email_signup_login_and_workspace_ownership():
         workspace = created.json()
         assert workspace["owner_id"] == signed_up["user"]["id"]
         assert workspace["access_token"]
+
+        listed = client.get("/api/v1/workspaces", headers={"Authorization": f"Bearer {token}"})
+        assert listed.status_code == 200
+        assert len(listed.json()) == 1
+        assert listed.json()[0]["id"] == workspace["id"]
+        assert listed.json()[0]["access_token"]
+
+        resumed = client.post(f"/api/v1/workspaces/{workspace['id']}/session", headers={"Authorization": f"Bearer {token}"})
+        assert resumed.status_code == 200
+        assert resumed.json()["access_token"]
 
         other = client.post("/api/v1/auth/signup", json={"email": "other@example.com", "password": "a-different-long-password"})
         other_token = other.json()["access_token"]

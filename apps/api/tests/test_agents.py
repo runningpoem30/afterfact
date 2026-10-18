@@ -26,7 +26,7 @@ class FakeStore:
     def source_evidence(self, workspace_id, claim_ids):
         if not self.with_evidence or "claim-1" not in claim_ids:
             return []
-        return [{"claim_id": "claim-1", "evidence_quote": "The synthetic launch is in June", "source_text": "Synthetic planning note."}]
+        return [{"claim_id": "claim-1", "statement": "The synthetic launch is in June", "status": "proposed", "evidence_quote": "The synthetic launch is in June", "source_text": "Synthetic planning note.", "evidence_type": "source", "evidence_label": "Synthetic planning note"}]
 
     def _event(self, graph, event_type, payload):
         self.events.append((event_type, payload))
@@ -77,12 +77,38 @@ def test_analyst_retrieves_graph_evidence_then_coordinator_writes_proposals(monk
     assert len(result["tool_calls"]) == 2
     assert result["tool_calls"][1]["tool"] == "retrieve_source_fragments"
     assert result["claim_ids"] == ["claim-1"]
+    assert result["evidence"][0]["quote"] == "The synthetic launch is in June"
+    assert result["evidence"][0]["source"] == "Synthetic planning note"
     assert result["action_id"]
     assert result["status"] == "draft"
     assert any("HANDED_OFF_TO" in query for query, _ in store.graph.writes)
     assert any("USED_CLAIM" in query for query, _ in store.graph.writes)
     assert any("REQUIRES" in query for query, _ in store.graph.writes)
     assert store.events[0][0] == "agents.handoff.completed"
+
+
+def test_analyst_malformed_text_gets_one_structured_repair_using_real_retrieved_evidence(monkeypatch):
+    import app.agents as module
+
+    monkeypatch.setattr(module.settings, "vercel_ai_gateway_api_key", "test-only")
+    monkeypatch.setattr(module.settings, "model_name", "unit-test-model")
+    store = FakeStore()
+    agent = RecallAgents.__new__(RecallAgents)
+    agent.store = store
+    completions = FakeCompletions([
+        response(content="Searching the workspace now."),
+        response('Here is the result: ```json\\n{"title":"Check launch timing","rationale":"The stored source says June.","claim_ids":["claim-1"],"action_title":"","uncertainty":"The claim is still proposed."}\\n```'),
+        response('{"title":"Check launch timing","rationale":"The stored source says June.","claim_ids":["claim-1"],"action_title":"","uncertainty":"The claim is still proposed."}'),
+    ])
+    agent.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    result = agent.run_task("workspace-1", "When is the synthetic launch?")
+
+    assert len(completions.calls) == 3
+    assert completions.calls[1]["response_format"] == {"type": "json_object"}
+    assert result["claim_ids"] == ["claim-1"]
+    assert result["status"] == "draft"
+    assert any(event[0] == "agents.handoff.completed" for event in store.events)
 
 
 def test_coordinator_cannot_create_action_without_retrieved_support(monkeypatch):
@@ -105,4 +131,7 @@ def test_coordinator_cannot_create_action_without_retrieved_support(monkeypatch)
     assert result["claim_ids"] == []
     assert result["action_id"] is None
     assert result["status"] == "needs_review"
+    assert result["decision"]["title"] == "No source-backed answer yet"
+    assert result["decision"]["claim_ids"] == []
+    assert result["decision"]["action_title"] == ""
     assert not any("REQUIRES" in query for query, _ in store.graph.writes)

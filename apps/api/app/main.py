@@ -133,8 +133,38 @@ def create_workspace(payload: WorkspaceIn, authorization: str | None = Header(de
         raise HTTPException(401, "A signed-in account is required to create workspaces")
     workspace_id = str(uuid.uuid4())
     result = db.create_workspace(workspace_id, payload.name, owner_id=owner_id)
+    db.register_workspace(owner_id, result)
     result["access_token"] = sessions.dumps({"workspace_id": workspace_id, "user_id": owner_id})
     return result
+
+
+@app.get("/api/v1/workspaces")
+def list_workspaces(authorization: str | None = Header(default=None), db: RecallStore = Depends(store)) -> list[dict[str, Any]]:
+    claims = session_claims(authorization.removeprefix("Bearer ") if authorization else None)
+    owner_id = claims.get("user_id")
+    if not owner_id:
+        raise HTTPException(401, "A signed-in account is required")
+    try:
+        workspaces = db.workspaces_for_user(owner_id)
+        return [{**workspace, "access_token": sessions.dumps({"workspace_id": workspace["id"], "user_id": owner_id})} for workspace in workspaces]
+    except Exception as exc:
+        raise HTTPException(503, detail={"code": "workspace_lookup_failed", "message": "Could not load your workspaces. Please try again."}) from exc
+
+
+@app.post("/api/v1/workspaces/{workspace_id}/session")
+def workspace_session(workspace_id: str, authorization: str | None = Header(default=None), db: RecallStore = Depends(store)) -> dict[str, Any]:
+    safe_graph_id(workspace_id)
+    claims = session_claims(authorization.removeprefix("Bearer ") if authorization else None)
+    owner_id = claims.get("user_id")
+    try:
+        workspace = db.get_workspace(workspace_id)
+    except GraphUnavailable as exc:
+        raise HTTPException(404, "Workspace not found") from exc
+    if not owner_id or workspace.get("owner_id") != owner_id:
+        raise HTTPException(403, "Workspace access denied")
+    db.register_workspace(owner_id, workspace)
+    workspace["access_token"] = sessions.dumps({"workspace_id": workspace_id, "user_id": owner_id})
+    return workspace
 
 
 def authorize_workspace(workspace_id: str, access_token: str | None = None) -> None:

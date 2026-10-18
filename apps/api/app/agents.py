@@ -15,6 +15,28 @@ class AgentUnavailable(RuntimeError):
     pass
 
 
+def _parse_json_object(content: Any, role: str) -> dict[str, Any]:
+    if isinstance(content, dict):
+        parsed = content
+    else:
+        text = str(content or "").strip()
+        if text.startswith("```"):
+            text = text.removeprefix("```json").removeprefix("```JSON").removeprefix("```").removesuffix("```").strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end <= start:
+                raise AgentUnavailable(f"{role} returned no JSON object")
+            try:
+                parsed = json.loads(text[start:end + 1])
+            except json.JSONDecodeError as exc:
+                raise AgentUnavailable(f"{role} returned invalid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise AgentUnavailable(f"{role} response must be a JSON object")
+    return parsed
+
+
 class RecallAgents:
     """An Analyst retrieves graph evidence; a Coordinator evaluates the handoff."""
 
@@ -69,20 +91,35 @@ class RecallAgents:
                     messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False)[:12000]})
             else:
                 raise AgentUnavailable("Analyst exceeded the bounded tool-call budget")
-            try:
-                analyst_proposal = json.loads(message.content or "{}")
-            except json.JSONDecodeError as exc:
-                raise AgentUnavailable("Analyst returned malformed structured output") from exc
-            if not isinstance(analyst_proposal, dict):
-                raise AgentUnavailable("Analyst response must be a JSON object")
-            # A search hit is not evidence by itself. Ensure the agent retrieves its persisted
-            # source fragments before the handoff even if the model omits the second tool call.
+            fallback_search_results = self.store.search_current_claims(workspace_id, task, 12)
+            newly_searched_ids = {row["id"] for row in fallback_search_results} - searched_claim_ids
+            if fallback_search_results and newly_searched_ids:
+                tool_records.append({"tool": "search_claims", "arguments": {"query": task[:200]}, "result_count": len(fallback_search_results), "result_ids": [row["id"] for row in fallback_search_results[:20]]})
+            searched_claim_ids.update(row["id"] for row in fallback_search_results)
             pending_ids = sorted(searched_claim_ids - retrieved_claim_ids)[:20]
             if pending_ids:
                 result = self.store.source_evidence(workspace_id, pending_ids)
                 retrieved_claim_ids.update(row["claim_id"] for row in result)
                 evidence_ids.update(row["claim_id"] for row in result)
                 tool_records.append({"tool": "retrieve_source_fragments", "arguments": {"claim_ids": pending_ids}, "result_count": len(result), "result_ids": [row["claim_id"] for row in result]})
+            try:
+                analyst_proposal = _parse_json_object(message.content, "Analyst")
+            except AgentUnavailable as first_error:
+                repair = self.client.chat.completions.create(
+                    model=settings.model_name,
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": "Convert the supplied Analyst response into exactly one JSON object with keys title, rationale, claim_ids, action_title, uncertainty. Preserve only claims present in the provided retrieved evidence. If parsing or evidence is uncertain, use empty claim_ids and explain uncertainty. Do not add facts."},
+                        {"role": "user", "content": json.dumps({"original_task": task[:1000], "analyst_response": str(message.content or "")[:6000], "retrieved_evidence": self.store.source_evidence(workspace_id, sorted(evidence_ids)[:20])}, ensure_ascii=False)},
+                    ],
+                )
+                try:
+                    analyst_proposal = _parse_json_object(repair.choices[0].message.content, "Analyst structured-output repair")
+                except AgentUnavailable as repair_error:
+                    raise AgentUnavailable(f"Analyst could not provide a valid structured handoff ({first_error}; {repair_error})") from repair_error
+            # A search hit is not evidence by itself. Ensure the agent retrieves its persisted
+            # source fragments before the handoff even if the model omits the second tool call.
             analyst_duration_ms = int((time.monotonic() - started) * 1000)
 
             coordinator_started = time.monotonic()
@@ -96,12 +133,7 @@ class RecallAgents:
                     {"role": "user", "content": json.dumps({"task": task[:1000], "analyst_handoff": analyst_proposal, "retrieved_evidence": evidence}, ensure_ascii=False)[:16000]},
                 ],
             )
-            try:
-                proposal = json.loads(response.choices[0].message.content or "{}")
-            except json.JSONDecodeError as exc:
-                raise AgentUnavailable("Coordinator returned malformed structured output") from exc
-            if not isinstance(proposal, dict):
-                raise AgentUnavailable("Coordinator response must be a JSON object")
+            proposal = _parse_json_object(response.choices[0].message.content, "Coordinator")
             coordinator_duration_ms = int((time.monotonic() - coordinator_started) * 1000)
             allowed_ids = searched_claim_ids & retrieved_claim_ids
             claim_ids = [str(item) for item in proposal.get("claim_ids", []) if str(item) in allowed_ids]
@@ -109,6 +141,10 @@ class RecallAgents:
                 claim_ids = [str(item) for item in analyst_proposal.get("claim_ids", []) if str(item) in allowed_ids]
             supported = bool(claim_ids)
             if not supported:
+                proposal["title"] = "No source-backed answer yet"
+                proposal["rationale"] = "This workspace did not return a claim with retrievable source evidence for the task. Add or correct a source in Sources, then run the task again."
+                proposal["uncertainty"] = "The answer is unknown from the current workspace evidence; no factual answer or action is proposed."
+                proposal["claim_ids"] = []
                 proposal["action_title"] = ""
             decision_id = uuid.uuid4().hex
             action_id = uuid.uuid4().hex if proposal.get("action_title") and supported else None
@@ -131,7 +167,8 @@ class RecallAgents:
                 graph.query("MATCH (d:Decision {id:$decision_id}), (cr:AgentRun {id:$coordinator_id}) CREATE (a:Action {id:$action_id, title:$title, status:'proposed', created_at:$created, idempotency_key:$key}) CREATE (a)-[:REQUIRES]->(d) CREATE (cr)-[:PRODUCED]->(a)", {"decision_id": decision_id, "coordinator_id": coordinator_id, "action_id": action_id, "title": str(proposal["action_title"])[:240], "created": started_at, "key": coordinator_id})
             graph.query("MATCH (w:Workspace {id:$id}) SET w.revision = w.revision + 1", {"id": workspace_id})
             self.store._event(graph, "agents.handoff.completed", {"analyst_run_id": analyst_id, "coordinator_run_id": coordinator_id, "handoff_id": handoff_id, "decision_id": decision_id, "action_id": action_id, "tool_calls": len(tool_records)})
-            return {"analyst_run_id": analyst_id, "coordinator_run_id": coordinator_id, "handoff_id": handoff_id, "decision_id": decision_id, "action_id": action_id, "status": decision_status, "decision": proposal, "claim_ids": claim_ids, "tool_calls": tool_records, "duration_ms": analyst_duration_ms + coordinator_duration_ms, "model": settings.model_name}
+            visible_evidence = [{"claim_id": row["claim_id"], "statement": row.get("statement", ""), "quote": row["evidence_quote"], "source": row.get("evidence_label") or row.get("evidence_type") or "Stored evidence", "claim_status": row.get("status", "unknown"), "confidence": row.get("confidence"), "confidence_kind": row.get("confidence_kind")} for row in evidence if row.get("claim_id") in claim_ids]
+            return {"analyst_run_id": analyst_id, "coordinator_run_id": coordinator_id, "handoff_id": handoff_id, "decision_id": decision_id, "action_id": action_id, "status": decision_status, "decision": proposal, "claim_ids": claim_ids, "evidence": visible_evidence, "tool_calls": tool_records, "duration_ms": analyst_duration_ms + coordinator_duration_ms, "model": settings.model_name}
         except AgentUnavailable:
             raise
         except Exception as exc:
