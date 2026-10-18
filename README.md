@@ -26,24 +26,25 @@ The checked-in [`env.template`](env.template) lists all supported variables with
 
 ## Deployment plan and required configuration
 
-The current first screen is a standalone Afterhack landing page. Workspace navigation appears only after a user explicitly creates a private guest workspace or chooses “Continue” to reopen a saved one. Google OAuth signup is not yet implemented. The standalone page is `apps/web/src/LandingPage.tsx`; workspace navigation/rendering is in `apps/web/src/App.tsx`.
+The first screen is a standalone Afterhack landing page. Users create an email/password account or log in; workspace navigation appears after authentication and opening/creating an account-owned workspace. The landing is `apps/web/src/LandingPage.tsx`; the authenticated workspace is rendered by `apps/web/src/App.tsx`. Email verification, password reset, and production rate-limiting are not implemented yet.
 
 The recommended deployment split is Vercel for the static frontend, a persistent Python/FastAPI container service (Northflank is a candidate) for application logic, FalkorDB Cloud for the graph, and server-side Vercel AI Gateway calls. See [`docs/deployment-plan.md`](docs/deployment-plan.md) for the sequence and security boundaries. No cloud deployment has been provisioned yet.
 
-Before we implement Google signup/deployment, the items you will need to supply/configure are:
-- Google OAuth **Client ID** and **Client Secret** in server-side environment secrets, plus the authorized callback URL after we choose the production API/domain. Never commit/paste the secret in chat.
+Before deployment, configure the items below. Email/password authentication works locally; Google OAuth is not currently used or required.
+
+- `ACCOUNT_GRAPH_NAME`: server-fixed FalkorDB graph for account records; keep it on the API server.
 - A FalkorDB Cloud instance and its endpoint host, port, database username/password, TLS enabled/disabled state, and tier/persistence choice. Put those only in the API host secret settings.
 - Northflank account/project/service only if you choose it for the API; Vercel project/team for the frontend. No cloud account API token is needed for local development.
-- Public frontend/API domains and the exact OAuth redirect URI(s), once deployment domains are chosen.
+- Public frontend/API domains and allowed CORS origins once deployment domains are chosen. OAuth redirect URIs are only needed if we later add Google login.
 
-Do not send credentials in this chat. When you have them, enter them directly in the relevant provider’s secrets/environment UI or in your local ignored `.env` for testing.
+Do not send credentials in this chat. Google OAuth credentials are not needed for email/password signup. When provider credentials are needed later, enter them directly in the provider's server-side secrets/environment UI or in your local ignored `.env`.
 
 ## Architecture
 
 - `apps/web`: React + TypeScript + Vite UI; React Flow renders the backend graph response.
-- `apps/api`: FastAPI routes, Vercel AI Gateway structured extraction and bounded tool-calling adapters, signed guest workspace tokens, FalkorDB repository.
+- `apps/api`: FastAPI routes, Vercel AI Gateway structured extraction and bounded tool-calling adapters, signed user sessions, owner-checked account workspaces, FalkorDB repository.
 - `compose.yaml`: pinned FalkorDB image with append-only persistence and a named volume, API, and static web build.
-- The backend derives graph names from UUID workspace IDs; requests cannot select a graph by arbitrary name. Signed workspace guest tokens are isolated and expire after 24 hours. Production deployment should use a full identity provider and a strong random session secret.
+- The backend derives graph names from UUID workspace IDs; requests cannot select a graph by arbitrary name. Signed account and workspace tokens are isolated and expire after 24 hours. Current email/password auth does not verify email or provide password reset/rate limiting; use a production identity provider or harden those controls before unrestricted public signup.
 - The Analyst → Coordinator route uses real Vercel AI Gateway model calls, bounded FalkorDB-backed tools, source-fragment retrieval, and persisted handoff/run/decision/action proposal records. Synthetic live tests have exercised this route; broader browser acceptance and operational recovery remain outstanding.
 
 ## Graph model and query catalog

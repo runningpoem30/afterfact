@@ -7,12 +7,15 @@ type Props = {
       model: { configured: boolean };
     };
   } | null;
-  onCreateWorkspace: () => void;
+  onAuthenticate: (mode: 'signup' | 'login') => void;
+  authenticatedEmail: string | null;
   savedWorkspaceName: string | null;
   onContinueWorkspace: () => void;
+  onCreateWorkspace: () => void;
+  onLogout: () => void;
 };
 
-export default function LandingPage({ health, onCreateWorkspace, savedWorkspaceName, onContinueWorkspace }: Props) {
+export default function LandingPage({ health, onAuthenticate, authenticatedEmail, savedWorkspaceName, onContinueWorkspace, onCreateWorkspace, onLogout }: Props) {
   const graphReady = health?.integrations.falkordb.available ?? false;
   const modelReady = health?.integrations.model.configured ?? false;
 
@@ -21,7 +24,7 @@ export default function LandingPage({ health, onCreateWorkspace, savedWorkspaceN
       <section className="landing-page">
         <div className="landing-topline">
           <span className="eyebrow"><span className="pulse-mark" /> ENGINEERING MEMORY / GRAPH-NATIVE RECOVERY</span>
-          <a href="#how-it-works">SYSTEM OVERVIEW <ArrowDownRight size={13} /></a>
+          <div className="landing-nav"><a href="#how-it-works">SYSTEM OVERVIEW <ArrowDownRight size={13} /></a>{authenticatedEmail ? <button onClick={onLogout}>LOG OUT</button> : <button onClick={() => onAuthenticate('login')}>LOG IN</button>}</div>
         </div>
 
         <div className="landing-hero">
@@ -31,12 +34,11 @@ export default function LandingPage({ health, onCreateWorkspace, savedWorkspaceN
             <p>Afterhack connects source evidence to agent memory, decisions, and proposed actions—so engineers can inspect what changed and repair downstream work with a traceable record.</p>
             <div className="welcome-actions">
               <div className="landing-actions">
-                <button className="primary-button" onClick={onCreateWorkspace} disabled={!graphReady}>
-                  <Plus size={16} /> Start a private workspace <ArrowUpRight size={14} />
-                </button>
+                {authenticatedEmail ? <button className="primary-button" onClick={onCreateWorkspace} disabled={!graphReady}><Plus size={16} /> Create a workspace <ArrowUpRight size={14} /></button> : <button className="primary-button" onClick={() => onAuthenticate('signup')}><Plus size={16} /> Create account <ArrowUpRight size={14} /></button>}
                 {savedWorkspaceName && <button className="landing-secondary-button" onClick={onContinueWorkspace}>Continue to {savedWorkspaceName}</button>}
+                {!authenticatedEmail && <button className="landing-secondary-button" onClick={() => onAuthenticate('login')}>Log in</button>}
               </div>
-              <span><ShieldCheck size={15} /> Isolated guest workspace · no shared example graph</span>
+              <span><ShieldCheck size={15} /> Email/password account · private workspaces</span>
             </div>
             <div className="hero-proof">
               <span><i className={graphReady ? 'ok-dot' : 'bad-dot'} /> FALKORDB {graphReady ? 'CONNECTED' : 'OFFLINE'}</span>
@@ -83,9 +85,9 @@ export default function LandingPage({ health, onCreateWorkspace, savedWorkspaceN
           </div>
           <div className="landing-bottom-cta">
             <div><span className="eyebrow">02 / GET STARTED</span><h2>Bring a source.<br /><em>See what it changes.</em></h2><p>Create an isolated local workspace. No sample claims, precomputed graph, or canned agent answer.</p></div>
-            <button className="primary-button" onClick={onCreateWorkspace} disabled={!graphReady}><Plus size={16} /> Create private workspace</button>
+            <button className="primary-button" onClick={authenticatedEmail ? onCreateWorkspace : () => onAuthenticate('signup')} disabled={authenticatedEmail ? !graphReady : false}><Plus size={16} /> {authenticatedEmail ? 'Create a workspace' : 'Create account'}</button>
           </div>
-          <div className="landing-footnote"><span>AFTERHACK / LOCAL GUEST WORKSPACE</span><span>AI calls send submitted text to configured Vercel AI Gateway providers.</span><span>AUTHENTICATED SIGNUP NOT ENABLED YET</span></div>
+          <div className="landing-footnote"><span>AFTERHACK / EMAIL + PASSWORD</span><span>Source text is sent to the configured Vercel AI Gateway during extraction.</span><span>EMAIL VERIFICATION / RESET NOT ENABLED</span></div>
         </div>
       </section>
       {health && <div className="integration-card landing-health-card"><div className="integration-icon"><Database size={17} /></div><div><strong>Integration status</strong><span>Live connectivity/configuration only. No fabricated service metrics.</span></div><div className="integration-state"><span className={graphReady ? 'ok-dot' : 'bad-dot'} /><span>FalkorDB {graphReady ? 'ready' : 'unavailable'}</span><span className={modelReady ? 'ok-dot' : 'bad-dot'} /><span>Model {modelReady ? 'ready' : 'unconfigured'}</span></div></div>}

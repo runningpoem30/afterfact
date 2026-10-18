@@ -7,7 +7,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,7 @@ from .settings import settings
 from .store import GraphUnavailable, RecallStore, StaleCorrectionPreview
 from .extractor import ExtractorUnavailable, ModelExtractor
 from .agents import AgentUnavailable, RecallAgents
+from .auth import hash_password, verify_password
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("recall")
@@ -24,10 +25,23 @@ sessions = URLSafeTimedSerializer(settings.session_secret, salt="recall-workspac
 
 
 def store() -> RecallStore:
+    override = app.dependency_overrides.get(RecallStore)
+    if override:
+        return override()
     try:
         return RecallStore()
     except Exception as exc:
         raise HTTPException(status_code=503, detail={"code": "falkordb_unavailable", "message": "FalkorDB is unavailable. Configure and start FalkorDB; RECALL will not substitute in-memory storage."}) from exc
+
+
+class SignupIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class LoginIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class WorkspaceIn(BaseModel):
@@ -74,29 +88,64 @@ def health() -> dict[str, Any]:
     return {"status": "ok" if db_ok else "degraded", "integrations": {"falkordb": {"configured": bool(settings.falkordb_host), "available": db_ok, "error": db_error}, "model": {"configured": model_ok, "provider": "vercel-ai-gateway" if model_ok else None, "model": settings.model_name if model_ok else None, "base_url": settings.vercel_ai_gateway_base_url if model_ok else None}}, "capabilities": {"source_ingestion": db_ok and model_ok, "correction_repair": db_ok, "agents": db_ok and model_ok}}
 
 
+@app.post("/api/v1/auth/signup", status_code=201)
+def signup(payload: SignupIn, db: RecallStore = Depends(store)) -> dict[str, Any]:
+    email = payload.email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(422, detail={"code": "invalid_email", "message": "Enter a valid email address."})
+    try:
+        if db.find_user_by_email(email):
+            raise HTTPException(409, detail={"code": "email_exists", "message": "An account with this email already exists. Try logging in."})
+        user_id = str(uuid.uuid4())
+        user = db.create_account_user(user_id, email, hash_password(payload.password))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, detail={"code": "account_store_unavailable", "message": "Account storage is unavailable."}) from exc
+    return {"user": {"id": user["id"], "email": user["email"]}, "access_token": sessions.dumps({"user_id": user["id"], "email": user["email"]})}
+
+
+@app.post("/api/v1/auth/login")
+def login(payload: LoginIn, db: RecallStore = Depends(store)) -> dict[str, Any]:
+    try:
+        user = db.find_user_by_email(payload.email.strip().lower())
+    except Exception as exc:
+        raise HTTPException(503, detail={"code": "account_store_unavailable", "message": "Account storage is unavailable."}) from exc
+    if not user or not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(401, detail={"code": "invalid_credentials", "message": "Email or password is incorrect."})
+    return {"user": {"id": user["id"], "email": user["email"]}, "access_token": sessions.dumps({"user_id": user["id"], "email": user["email"]})}
+
+
+def session_claims(access_token: str | None) -> dict[str, Any]:
+    if not access_token:
+        raise HTTPException(401, "Login required")
+    try:
+        return sessions.loads(access_token, max_age=60 * 60 * 24)
+    except BadSignature as exc:
+        raise HTTPException(401, "Session expired or invalid") from exc
+
+
 @app.post("/api/v1/workspaces", status_code=201)
-def create_workspace(payload: WorkspaceIn) -> dict[str, Any]:
+def create_workspace(payload: WorkspaceIn, authorization: str | None = Header(default=None), db: RecallStore = Depends(store)) -> dict[str, Any]:
+    claims = session_claims(authorization.removeprefix("Bearer ") if authorization else None)
+    owner_id = claims.get("user_id")
+    if not owner_id:
+        raise HTTPException(401, "A signed-in account is required to create workspaces")
     workspace_id = str(uuid.uuid4())
-    result = store().create_workspace(workspace_id, payload.name)
-    result["access_token"] = sessions.dumps({"workspace_id": workspace_id})
+    result = db.create_workspace(workspace_id, payload.name, owner_id=owner_id)
+    result["access_token"] = sessions.dumps({"workspace_id": workspace_id, "user_id": owner_id})
     return result
 
 
 def authorize_workspace(workspace_id: str, access_token: str | None = None) -> None:
-    # Local isolated guest token. Production deployments should replace this with established auth.
-    token = access_token
-    if not token:
-        raise HTTPException(401, "Workspace session required")
+    claims = session_claims(access_token)
     try:
-        claims = sessions.loads(token, max_age=60 * 60 * 24)
-    except BadSignature as exc:
-        raise HTTPException(401, "Workspace session expired or invalid") from exc
-    if claims.get("workspace_id") != workspace_id:
-        raise HTTPException(403, "Workspace access denied")
-    try:
-        store().get_workspace(workspace_id)
+        workspace = store().get_workspace(workspace_id)
     except GraphUnavailable as exc:
         raise HTTPException(404, "Workspace not found") from exc
+    owner_id = workspace.get("owner_id")
+    if owner_id == "guest" or not claims.get("user_id") or claims["user_id"] != owner_id:
+        raise HTTPException(403, "Workspace access denied")
 
 
 @app.get("/api/v1/workspaces/{workspace_id}/overview")

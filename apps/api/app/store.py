@@ -45,18 +45,43 @@ class RecallStore:
         headers = [item[-1] if isinstance(item, (list, tuple)) else item for item in result.header]
         return [dict(zip(headers, row)) for row in result.result_set]
 
-    def create_workspace(self, workspace_id: str, name: str) -> dict[str, Any]:
+    def create_workspace(self, workspace_id: str, name: str, owner_id: str | None = None) -> dict[str, Any]:
         g = self._graph(workspace_id)
         created = datetime.now(timezone.utc).isoformat()
-        g.query("CREATE (w:Workspace {id:$id, name:$name, created_at:$created, revision:0})", {"id": workspace_id, "name": name, "created": created})
-        self._event(g, "workspace.created", {"workspace_id": workspace_id})
-        return {"id": workspace_id, "name": name, "created_at": created, "revision": 0}
+        g.query("CREATE (w:Workspace {id:$id, name:$name, owner_id:$owner_id, created_at:$created, revision:0})", {"id": workspace_id, "name": name, "owner_id": owner_id or "guest", "created": created})
+        self._event(g, "workspace.created", {"workspace_id": workspace_id, "owner_id": owner_id or "guest"})
+        return {"id": workspace_id, "name": name, "owner_id": owner_id or "guest", "created_at": created, "revision": 0}
 
     def get_workspace(self, workspace_id: str) -> dict[str, Any]:
-        result = self._graph(workspace_id).ro_query("MATCH (w:Workspace {id:$id}) RETURN w.id AS id, w.name AS name, w.created_at AS created_at, w.revision AS revision", {"id": workspace_id})
+        result = self._graph(workspace_id).ro_query("MATCH (w:Workspace {id:$id}) RETURN w.id AS id, w.name AS name, w.owner_id AS owner_id, w.created_at AS created_at, w.revision AS revision", {"id": workspace_id})
         if not result.result_set:
             raise GraphUnavailable("Workspace not found")
         return self.rows(result)[0]
+
+    def create_user(self, user_id: str, email: str, password_hash: str) -> dict[str, Any]:
+        g = self._graph(user_id)
+        created = datetime.now(timezone.utc).isoformat()
+        g.query("CREATE (u:User {id:$id, email:$email, password_hash:$password_hash, created_at:$created})", {"id": user_id, "email": email, "password_hash": password_hash, "created": created})
+        return {"id": user_id, "email": email, "created_at": created}
+
+    def _account_graph(self):
+        # FalkorDB cannot execute a read query against a newly created, empty graph.
+        # MERGE seeds a stable catalog node and remains safe on every request.
+        graph = self.db.select_graph(settings.account_graph_name)
+        graph.query("MERGE (:AccountCatalog {id:'afterhack-account-catalog'})")
+        return graph
+
+    def find_user_by_email(self, email: str) -> dict[str, Any] | None:
+        # Account lookup graph is fixed by server configuration, never client-selected.
+        result = self._account_graph().ro_query("MATCH (u:User {email:$email}) RETURN u.id AS id, u.email AS email, u.password_hash AS password_hash, u.created_at AS created_at LIMIT 1", {"email": email})
+        rows = self.rows(result)
+        return rows[0] if rows else None
+
+    def create_account_user(self, user_id: str, email: str, password_hash: str) -> dict[str, Any]:
+        g = self._account_graph()
+        created = datetime.now(timezone.utc).isoformat()
+        g.query("CREATE (u:User {id:$id, email:$email, password_hash:$password_hash, created_at:$created})", {"id": user_id, "email": email, "password_hash": password_hash, "created": created})
+        return {"id": user_id, "email": email, "created_at": created}
 
     def _event(self, g: Any, event_type: str, payload: dict[str, Any]) -> None:
         g.query("CREATE (e:AuditEvent {id:$id, type:$type, payload:$payload, created_at:$created})", {"id": __import__("uuid").uuid4().hex, "type": event_type, "payload": json.dumps(payload, ensure_ascii=False), "created": datetime.now(timezone.utc).isoformat()})

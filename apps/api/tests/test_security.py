@@ -2,6 +2,7 @@ from itsdangerous import URLSafeTimedSerializer
 from fastapi.testclient import TestClient
 
 from app.main import app, sessions, safe_graph_id
+from app.auth import hash_password, verify_password
 
 
 def test_graph_name_is_server_derived_and_rejects_arbitrary_names():
@@ -26,3 +27,11 @@ def test_health_endpoint_is_available_without_database_or_model():
     assert response.status_code == 200
     assert "falkordb" in response.json()["integrations"]
     assert "model" in response.json()["integrations"]
+
+
+def test_password_hash_is_salted_and_verifiable():
+    first = hash_password("a-long-test-password")
+    second = hash_password("a-long-test-password")
+    assert first != second
+    assert verify_password("a-long-test-password", first)
+    assert not verify_password("wrong-password", first)

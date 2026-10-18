@@ -23,7 +23,7 @@ The frontend currently proxies `/api` only in local Vite development. A producti
 Deploy the existing API container (`apps/api/Dockerfile`) to a long-running container platform that supports Python containers, HTTPS, environment secrets, outbound connections, and health checks. **Northflank is a reasonable first candidate** because it builds/deploys Dockerized services from Git and provides runtime secrets, persistent services, and deployment domains; it is not provisioned or tested here yet. AWS App Runner or ECS Fargate are alternatives if you prefer AWS. A serverless Vercel Python function is possible only after checking runtime, request-duration, multipart, connection reuse, and workload limits; don't assume it will run the current app unchanged.
 
 Set server-only variables in the API deployment:
-- `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_USERNAME`, `FALKORDB_PASSWORD`, `FALKORDB_SSL` from the chosen FalkorDB deployment.
+- `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_USERNAME`, `FALKORDB_PASSWORD`, `FALKORDB_SSL`, and server-fixed `ACCOUNT_GRAPH_NAME` from the chosen FalkorDB deployment.
 - `VERCEL_AI_GATEWAY_API_KEY`, `VERCEL_AI_GATEWAY_BASE_URL`, `MODEL_NAME`.
 - A fresh random `SESSION_SECRET`, plus correct allowed frontend origins in `CORS_ORIGINS`.
 - Upload limits and timeouts appropriate for the service.
@@ -36,7 +36,7 @@ For a hackathon/demo, FalkorDB Cloud avoids operating the graph server yourself.
 
 ## Authentication and signup
 
-Do not launch a public “signup” page that only creates an anonymous workspace and describe it as user authentication. Current guest workspaces have signed, expiring tokens stored in browser local storage; this is suitable for a controlled local demo, not public multi-user production. Before public user signup, integrate an established identity provider (for example, Auth0, Clerk, or Amazon Cognito), derive workspace membership from the verified identity on the API, and add quotas, abuse controls, deletion/export, retention, and rate limits. Keep the guest workspace flow clearly labeled for the first live demo.
+The current milestone implements email/password registration and login: passwords are salted PBKDF2 hashes, the API issues signed 24-hour user tokens, account records live in the server-selected `ACCOUNT_GRAPH_NAME` graph, and new workspaces store an owner ID checked on authenticated routes. Live tests have verified signup, login, wrong-password rejection, owner access, and cross-account denial. This first-party auth is a controlled demo/local implementation, not yet production-ready. Email ownership is not verified; duplicate-account races, password reset, throttling/lockout, CSRF protections if moving tokens to cookies, account deletion/export, retention policy, and abuse controls remain before public signup. For production, prefer an established identity provider (e.g. Clerk, Auth0, or Amazon Cognito), then derive workspace membership from its verified identity on the API. Google OAuth can be added later if wanted; it is not currently required.
 
 ## Sequence
 
@@ -45,7 +45,7 @@ Do not launch a public “signup” page that only creates an anonymous workspac
 3. Deploy FalkorDB Cloud and API privately; verify API health and real model calls from the deployed service.
 4. Deploy frontend on Vercel with only the public API URL configured.
 5. Add production origin/CORS and session configuration; verify isolation between two newly created workspaces.
-6. Add OAuth/signup only after authorization is moved to an established identity provider.
+6. Before public signup, harden or replace local email/password auth with verified email ownership, reset flow, throttling, secure session lifecycle, and account/data deletion; optionally add Google OAuth through the chosen identity provider.
 7. Run the complete browser workflow against deployed services and record limitations before publishing the demo.
 
 No deployment has been created or claimed by this document. Cloud provider, costs, region, public API URL, and production credentials remain undecided.

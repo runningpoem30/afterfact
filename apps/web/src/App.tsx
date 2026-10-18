@@ -5,7 +5,8 @@ import LandingPage from './LandingPage';
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BookOpen, Bot, Check, ChevronDown, CircleHelp, Clock3, Database, FilePlus2, GitBranch, LayoutDashboard, LoaderCircle, LockKeyhole, Network, Play, Plus, Search, Settings2, ShieldCheck, Sparkles, Upload, X } from 'lucide-react';
 
 type Health = { status: string; integrations: { falkordb: { available: boolean }; model: { configured: boolean; model?: string } }; capabilities: Record<string, boolean> };
-type Workspace = { id: string; name: string; revision: number; access_token: string };
+type AuthSession = { user: { id: string; email: string }; access_token: string };
+type Workspace = { id: string; name: string; owner_id: string; revision: number; access_token: string };
 type Overview = { workspace: { id: string; name: string; revision: number }; counts: Record<string, number>; attention: { id: string; type: string; title: string; status: string }[] };
 type GraphPayload = { nodes: { id: string; type: string; label: string; status: string; properties: Record<string, unknown> }[]; edges: { source: string; target: string; type: string }[] };
 type Claim = { id: string; statement: string; status: string; confidence: number; evidence_quote: string };
@@ -24,7 +25,11 @@ const initialNav = [
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [savedWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_workspace') || 'null'); } catch { return null; } });
+  const [auth, setAuth] = useState<AuthSession | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_auth') || 'null'); } catch { return null; } });
+    const [savedWorkspace] = useState<Workspace | null>(() => { try { return JSON.parse(localStorage.getItem('afterhack_workspace') || 'null'); } catch { return null; } });
+    const [authMode, setAuthMode] = useState<'signup' | 'login' | null>(null);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [graph, setGraph] = useState<GraphPayload | null>(null);
@@ -44,7 +49,22 @@ export default function App() {
   const [agentTask, setAgentTask] = useState('');
   const [agentResult, setAgentResult] = useState<{ status: string; decision: { title?: string; rationale?: string; uncertainty?: string }; tool_calls: { tool: string; result_count: number }[]; claim_ids: string[]; analyst_run_id: string; coordinator_run_id: string } | null>(null);
 
-  const enterSavedWorkspace = () => { if (savedWorkspace) setWorkspace(savedWorkspace); };
+  const enterSavedWorkspace = () => { if (savedWorkspace && auth && savedWorkspace.owner_id === auth.user.id) setWorkspace(savedWorkspace); };
+  const createWorkspaceFromLanding = () => { if (auth) setShowCreate(true); else setAuthMode('signup'); };
+  const authenticate = async () => {
+    setLoading(true); setError('');
+    try {
+      const result = await api<AuthSession>(`/api/v1/auth/${authMode}`, undefined, { method: 'POST', body: JSON.stringify({ email, password }) });
+      localStorage.setItem('afterhack_auth', JSON.stringify(result));
+      setAuth(result);
+      setAuthMode(null);
+      setPassword('');
+      if (savedWorkspace && savedWorkspace.owner_id === result.user.id) setWorkspace(savedWorkspace);
+      else { localStorage.removeItem('afterhack_workspace'); setShowCreate(true); }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Authentication failed'); }
+    finally { setLoading(false); }
+  };
+  const logout = () => { localStorage.removeItem('afterhack_auth'); localStorage.removeItem('afterhack_workspace'); setAuth(null); setWorkspace(null); setOverview(null); setGraph(null); setClaims([]); setAgentResult(null); setBanner('You have logged out. Your account-owned workspace remains stored in FalkorDB.'); };
 
   const loadWorkspace = useCallback(async (ws: Workspace) => {
     setLoading(true); setError('');
@@ -66,8 +86,9 @@ export default function App() {
   const createWorkspace = async () => {
     setLoading(true); setError('');
     try {
-      const ws = await api<Workspace>('/api/v1/workspaces', undefined, { method: 'POST', body: JSON.stringify({ name: workspaceName }) });
-      localStorage.setItem('afterhack_workspace', JSON.stringify(ws)); setWorkspace(ws); setShowCreate(false); setBanner('Workspace created. Your knowledge stays isolated in its own FalkorDB graph.');
+      if (!auth) { setShowCreate(false); setAuthMode('signup'); return; }
+      const ws = await api<Workspace>('/api/v1/workspaces', auth.access_token, { method: 'POST', body: JSON.stringify({ name: workspaceName }) });
+      localStorage.setItem('afterhack_workspace', JSON.stringify(ws)); setWorkspace(ws); setShowCreate(false); setBanner('Private workspace created for your account. Knowledge is isolated in its own FalkorDB graph.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Workspace creation failed'); }
     finally { setLoading(false); }
   };
@@ -116,7 +137,7 @@ export default function App() {
       <div className="brand"><div className="brand-mark"><GitBranch size={19} strokeWidth={2.4}/></div><span>AFTERHACK</span><span className="brand-beta">BETA</span></div>
       <div className="workspace-picker" onClick={() => setShowCreate(true)} role="button" tabIndex={0}><div className="workspace-avatar">{workspace?.name?.slice(0,1).toUpperCase() || 'R'}</div><div className="workspace-info"><strong>{workspace?.name || 'Select workspace'}</strong><span>{workspace ? 'Private workspace' : 'Create your first'}</span></div><ChevronDown size={15}/></div>
       <nav>{initialNav.map(group => <div className="nav-group" key={group.section}><div className="nav-label">{group.section}</div>{group.items.map(item => <button className={`nav-item ${page === item.name ? 'active' : ''}`} key={item.name} onClick={() => setPage(item.name)}><item.icon size={17}/><span>{item.name}</span>{item.name === 'Investigations' && overview?.counts.investigations ? <em>{overview.counts.investigations}</em> : null}</button>)}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><div className="user-row"><div className="user-avatar"><LockKeyhole size={14}/></div><div><strong>Guest workspace</strong><span>Private session</span></div></div></div>
+      <div className="sidebar-bottom"><div className="secure-note"><LockKeyhole size={15}/><span>Workspace-isolated<br/>knowledge graph</span></div><button className="user-row user-button" onClick={logout} title="Log out"><div className="user-avatar">{auth?.user.email.slice(0,1).toUpperCase() || 'U'}</div><div><strong>{auth?.user.email || 'Account'}</strong><span>Log out</span></div><ChevronDown size={15}/></button></div>
     </aside>}
 
     <main className="main">
@@ -124,7 +145,7 @@ export default function App() {
       <div className="page-content">
         {error && <div className="alert alert-error"><AlertTriangle size={16}/><span>{error}</span><button onClick={() => setError('')}><X size={15}/></button></div>}
         {banner && <div className="alert alert-success"><Check size={16}/><span>{banner}</span><button onClick={() => setBanner('')}><X size={15}/></button></div>}
-        {!workspace ? <LandingPage health={health} savedWorkspaceName={savedWorkspace?.name ?? null} onContinueWorkspace={enterSavedWorkspace} onCreateWorkspace={() => setShowCreate(true)} /> : <>
+        {!workspace ? <LandingPage health={health} authenticatedEmail={auth?.user.email ?? null} savedWorkspaceName={auth && savedWorkspace?.owner_id === auth.user.id ? savedWorkspace.name : null} onContinueWorkspace={enterSavedWorkspace} onAuthenticate={setAuthMode} onCreateWorkspace={createWorkspaceFromLanding} onLogout={logout} /> : <>
           <div className="page-heading"><div><div className="eyebrow">{page === 'Overview' ? 'YOUR KNOWLEDGE, ACCOUNTED FOR' : `WORKSPACE / ${page.toUpperCase()}`}</div><h1>{page === 'Overview' ? <>Good morning. <em>Here’s the state of memory.</em></> : page}</h1><p>{page === 'Overview' ? 'Every belief has a source. Every dependency has a path back.' : 'Inspect persisted knowledge and evidence in your isolated FalkorDB graph.'}</p></div><button className="secondary-button" onClick={() => loadWorkspace(workspace)}><Activity size={15}/> Refresh</button></div>
           {loading && <div className="loading-line"><LoaderCircle size={14} className="spin"/> Syncing with FalkorDB…</div>}
           {page === 'Overview' && <>
@@ -143,7 +164,8 @@ export default function App() {
         </>}
       </div>
     </main>
-    {showCreate && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setShowCreate(false);}}><div className="modal"><button className="modal-close" onClick={()=>setShowCreate(false)}><X size={17}/></button><div className="eyebrow"><ShieldCheck size={13}/> PRIVATE BY DEFAULT</div><h2>Create a workspace</h2><p>Your workspace gets a separate FalkorDB graph. Nothing is preloaded.</p><label>Workspace name<input autoFocus value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&createWorkspace()}/></label><div className="modal-foot"><span><LockKeyhole size={13}/> Isolated guest session</span><button className="primary-button" disabled={!workspaceName.trim()||loading} onClick={createWorkspace}>{loading?<LoaderCircle size={15} className="spin"/>:<Plus size={15}/>} Create workspace</button></div></div></div>}
+    {showCreate && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setShowCreate(false);}}><div className="modal"><button className="modal-close" onClick={()=>setShowCreate(false)}><X size={17}/></button><div className="eyebrow"><ShieldCheck size={13}/> PRIVATE BY DEFAULT</div><h2>Create a workspace</h2><p>Your workspace gets a separate FalkorDB graph. Nothing is preloaded.</p><label>Workspace name<input autoFocus value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&createWorkspace()}/></label><div className="modal-foot"><span><LockKeyhole size={13}/> Account-owned workspace</span><button className="primary-button" disabled={!workspaceName.trim()||loading} onClick={createWorkspace}>{loading?<LoaderCircle size={15} className="spin"/>:<Plus size={15}/>} Create workspace</button></div></div></div>}
+        {authMode && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget){setAuthMode(null);setPassword('');}}}><form className="modal auth-modal" onSubmit={e=>{e.preventDefault();void authenticate();}}><button type="button" className="modal-close" onClick={()=>{setAuthMode(null);setPassword('');}}><X size={17}/></button><div className="eyebrow"><ShieldCheck size={13}/> AFTERHACK ACCOUNT</div><h2>{authMode==='signup'?'Create your account':'Welcome back'}</h2><p>{authMode==='signup'?'Sign up with email and password. Email verification and password recovery are not enabled yet.':'Log in to continue to your private workspaces.'}</p><label>Email<input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></label><label>Password<input type="password" autoComplete={authMode==='signup'?'new-password':'current-password'} required minLength={authMode==='signup'?12:1} value={password} onChange={e=>setPassword(e.target.value)} placeholder={authMode==='signup'?'At least 12 characters':'Your password'}/></label><div className="modal-foot auth-modal-foot"><span>{authMode==='signup'?'12+ characters required':'Credentials stay server-side'}</span><button type="submit" className="primary-button" disabled={loading||!email||!password}>{loading?<LoaderCircle size={15} className="spin"/>:<ArrowUpRight size={15}/>} {authMode==='signup'?'Create account':'Log in'}</button></div><button type="button" className="auth-switch" onClick={()=>setAuthMode(authMode==='signup'?'login':'signup')}>{authMode==='signup'?'Already have an account? Log in':'New to Afterhack? Create an account'}</button></form></div>}
     {selected && <div className="drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSelected(null);}}><aside className="detail-drawer"><button className="modal-close" onClick={()=>setSelected(null)}><X size={17}/></button><div className="eyebrow">MEMORY CLAIM</div><h2>{selected.statement}</h2><span className={`status-pill ${selected.status}`}>{selected.status}</span><div className="drawer-section"><span>SUPPORTING EVIDENCE</span><blockquote>“{selected.evidence_quote}”</blockquote><small>Exact quoted span from the submitted source.</small></div><div className="drawer-section"><span>CORRECT THIS CLAIM</span><textarea value={correction} onChange={e=>setCorrection(e.target.value)} placeholder="Describe the corrected information…"/><button className="secondary-button full" disabled={correction.length<8} onClick={previewCorrection}><Search size={14}/> Preview impact</button></div>{preview && <div className="preview-box"><div className="preview-heading"><AlertTriangle size={15}/> PREVIEW · NO CHANGES APPLIED</div><p>Potentially affected records: {Array.isArray(preview.affected)?preview.affected.length:0}</p><p className="uncertainty-text">{String(preview.uncertainty)}</p><button className="primary-button full" onClick={applyCorrection}><Check size={15}/> Apply correction</button></div>}</aside></div>}
   </div>;
 }

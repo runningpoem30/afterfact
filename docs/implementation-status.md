@@ -7,7 +7,7 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Source, version, fragment, claim, correction and audit-event graph records; Compose uses append-only persistence and a named volume.
 - Vercel AI Gateway OpenAI-compatible adapter configured via `VERCEL_AI_GATEWAY_API_KEY`; exact-substring quote validation; no provider/canned fallback.
 - Bounded model-driven Analyst tools (`search_claims`, source-fragment retrieval) hand a structured proposal to a separate Coordinator model call; separate run records, tool metadata, handoff artifacts, decision/action proposals and events are persisted.
-- Signed, expiring guest workspace tokens; routes require workspace authorization.
+- Email/password signup/login with PBKDF2-hashed passwords, signed expiring account tokens, a server-selected account graph, and owner-checked workspace routes. Live test: signup 201, login 200, wrong password 401, owner workspace read 200, cross-account read 403; hash is not returned.
 - Bounded graph endpoint; React Flow consumes backend-returned nodes/edges.
 - Text and supported text upload; exact evidence offsets.
 - Correction preview/apply with workspace+claim revision checks, duplicate-request idempotency, preserved historical source-fragment context, and terminal-state filtering; downstream repair is still conservative and not atomic.
@@ -16,13 +16,15 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Official event rules, FalkorDB query/persistence/client docs and both prior-art papers inspected.
 
 ## Verified
+- Frontend first-use and saved-workspace tests verify the landing appears before navigation and that continuing is explicit. Auth forms call the real signup/login routes.
+- Live email/password signup and login against FalkorDB account graph; duplicate signup, wrong password, owner workspace access and cross-account 403 verified using synthetic test identities. Password hash is not returned by API.
 - Live Docker Compose stack started; FalkorDB container healthy, API health returns both FalkorDB and Vercel Gateway configured/available, frontend serves HTTP 200 at `http://localhost:5173`.
 - Real Vercel AI Gateway Chat Completions call returned HTTP 200 during synthetic source extraction.
 - Synthetic source was extracted into one claim; evidence quote was checked against exact submitted text; source/claim/audit write and graph-backed overview counts succeeded.
 - Separate real Analyst and Coordinator model calls completed on synthetic workspaces. Analyst found graph claims, retrieved exact source fragments, and Coordinator persisted `draft` decisions linked to actual claim IDs. Real handoff IDs and run records were returned; unsupported evidence stayed `needs_review` and created no action.
 - Complete API-level synthetic recovery workflow passed: workspace → live source extraction → agent handoff → correction preview → correction apply → persisted replacement and audit event. Duplicate apply returned `already_applied` with the same replacement; a workspace revision change after preview returned HTTP 409 `stale_correction_preview`. Replacement stayed proposed and linked to original source fragment as correction context; superseded claims were omitted from active claim search.
 - FalkorDB Python client returned typed headers as `[type_code, alias]`; row decoder fix was tested live through workspace authorization, ingestion and graph reads.
-- `apps/api/.venv/bin/pytest -q`: 11 passed (unit tests include isolated doubles; live synthetic API workflows above used real services).
+- `apps/api/.venv/bin/pytest -q`: 13 passed (includes isolated auth/service doubles; live synthetic workflows below use real services).
 - `npm --prefix apps/web test -- --reporter=verbose`: 2 passed (standalone landing content and no sidebar on first visit, including saved-workspace explicit-continue behavior; stubbed health response).
 - `npm --prefix apps/web run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed; Python dependencies pass `pip check`.

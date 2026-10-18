@@ -10,7 +10,8 @@ describe('Afterhack first-use state', () => {
   it('shows a standalone landing page before entering a workspace', async () => {
     render(<App />);
     expect(screen.getByText(/When the evidence/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Start a private workspace/i })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Create account/i })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /^Log in$/i })).toHaveLength(2);
     expect(screen.getByText(/ENGINEERING MEMORY/i)).toBeTruthy();
     expect(await screen.findByText(/Integration status/i)).toBeTruthy();
     expect(screen.getByRole('heading', { name: /Trace the evidence/i })).toBeTruthy();
@@ -21,7 +22,8 @@ describe('Afterhack first-use state', () => {
   });
 
   it('offers saved workspace access and opens navigation only after explicit continue', async () => {
-    localStorage.setItem('afterhack_workspace', JSON.stringify({ id: 'workspace-1', name: 'Engineering', access_token: 'test-token' }));
+    localStorage.setItem('afterhack_auth', JSON.stringify({ user: { id: 'user-1', email: 'engineer@example.com' }, access_token: 'user-token' }));
+    localStorage.setItem('afterhack_workspace', JSON.stringify({ id: 'workspace-1', name: 'Engineering', owner_id: 'user-1', access_token: 'test-token' }));
     vi.stubGlobal('fetch', vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       const payload = url.includes('/overview') ? { workspace: { id: 'workspace-1', name: 'Engineering', revision: 0 }, counts: { sources: 0, claims: 0, decisions: 0, actions: 0, investigations: 0 }, attention: [] }
@@ -35,6 +37,6 @@ describe('Afterhack first-use state', () => {
     expect(screen.queryByRole('navigation')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Continue to Engineering/i }));
     await waitFor(() => expect(screen.getByRole('navigation')).toBeTruthy());
-    expect(screen.getByText('Knowledge graph')).toBeTruthy();
+    expect(await screen.findByText('Knowledge graph')).toBeTruthy();
   });
 });
