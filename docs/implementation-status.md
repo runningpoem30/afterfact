@@ -11,6 +11,7 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Bounded graph endpoint; React Flow consumes backend-returned nodes/edges.
 - Text and supported text upload; exact evidence offsets.
 - Correction preview/apply with workspace+claim revision checks, duplicate-request idempotency, preserved historical source-fragment context, and terminal-state filtering; downstream repair is still conservative and not atomic.
+- Standalone dark Afterhack landing page is separated from workspace navigation. First visit shows the landing; saved guest workspaces require an explicit Continue action. Google OAuth/signup remains intentionally unimplemented until a provider redirect URI and server-side credentials are configured.
 - Integration health UI reflects connection/config status.
 - Official event rules, FalkorDB query/persistence/client docs and both prior-art papers inspected.
 
@@ -22,7 +23,7 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Complete API-level synthetic recovery workflow passed: workspace → live source extraction → agent handoff → correction preview → correction apply → persisted replacement and audit event. Duplicate apply returned `already_applied` with the same replacement; a workspace revision change after preview returned HTTP 409 `stale_correction_preview`. Replacement stayed proposed and linked to original source fragment as correction context; superseded claims were omitted from active claim search.
 - FalkorDB Python client returned typed headers as `[type_code, alias]`; row decoder fix was tested live through workspace authorization, ingestion and graph reads.
 - `apps/api/.venv/bin/pytest -q`: 11 passed (unit tests include isolated doubles; live synthetic API workflows above used real services).
-- `npm --prefix apps/web test -- --reporter=verbose`: 1 passed (first-use UI; stubbed health response).
+- `npm --prefix apps/web test -- --reporter=verbose`: 2 passed (standalone landing content and no sidebar on first visit, including saved-workspace explicit-continue behavior; stubbed health response).
 - `npm --prefix apps/web run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed; Python dependencies pass `pip check`.
 - Local Docker Graph version logged by the container: FalkorDB 4.0.0; image tag is `falkordb/falkordb:v4.10.0`.
@@ -43,6 +44,7 @@ Updated: 2026-10-18. The project directory was renamed from `studio-web-test` to
 - Full auth identity management; signed guest mode only.
 - Broader browser acceptance tests, evaluations, PDF/public URL ingestion.
 - Deployment, demo video, project blog, production security hardening.
+- Email/password or Google OAuth signup/login; current onboarding creates a signed guest workspace, not an authenticated account.
 
 ## Material limitations
 - The local test run created several isolated synthetic workspaces in the persistent FalkorDB volume; these are not preloaded production/sample data.
