@@ -12,7 +12,8 @@ Updated: 2026-10-19. The project directory is `graph-h`; Git history, branch and
 - Bounded graph endpoint; React Flow consumes backend-returned nodes/edges.
 - Text and supported text upload; exact evidence offsets.
 - Correction preview/apply with workspace+claim revision checks, duplicate-request idempotency, and preserved original history. Corrections create a separate reviewer-authored `SourceFragment` and `Claim` with `confidence_kind='human_correction'`; they do not reuse the original source quote as evidence for the corrected statement. Current claim and agent retrieval responses include evidence origin metadata.
-- Correction preview reports directly linked decisions and actions. Apply rechecks alternative current claim support through separate FalkorDB queries, marks unsupported decisions for review, holds proposed actions requiring those decisions, and can reconcile those dependencies on a duplicate retry. This is not a single atomic transaction.
+- Correction preview reports directly linked decisions and actions. Apply rechecks alternative current claim support through separate FalkorDB-compatible queries, marks unsupported decisions for review, holds proposed actions requiring those decisions, and can reconcile those dependencies on a duplicate retry. A live correction test initially exposed an unsupported FalkorDB `NOT EXISTS` subquery; it was replaced with bounded supported reads and verified live. This is not a single atomic transaction.
+- Source ingestion refreshes the source list and navigates to Memory so the user can immediately inspect extracted claims. Agent results return and display the exact retrieved evidence quotes and their origin labels.
 - Standalone dark Afterhack landing page is separated from workspace navigation. First visit shows the landing; saved guest workspaces require an explicit Continue action. Google OAuth/signup remains intentionally unimplemented until a provider redirect URI and server-side credentials are configured.
 - Integration health UI reflects connection/config status.
 - Official event rules, FalkorDB query/persistence/client docs and both prior-art papers inspected.
@@ -25,12 +26,12 @@ Updated: 2026-10-19. The project directory is `graph-h`; Git history, branch and
 - Real Vercel AI Gateway Chat Completions call returned HTTP 200 during synthetic source extraction.
 - Synthetic source was extracted into one claim; evidence quote was checked against exact submitted text; source/claim/audit write and graph-backed overview counts succeeded.
 - Separate real Analyst and Coordinator model calls completed on synthetic workspaces. Analyst found graph claims, retrieved exact source fragments, and Coordinator persisted `draft` decisions linked to actual claim IDs. Real handoff IDs and run records were returned; unsupported evidence stayed `needs_review` and created no action.
-- Live synthetic user journey passed against Vercel AI Gateway and FalkorDB: source extraction → original evidence quote → Analyst/Coordinator decision → correction preview/apply → replacement claim with reviewer-correction provenance → fresh agent task. The fresh task retrieved the replacement claim ID and quoted the reviewer correction, not the superseded source quote. Duplicate Apply returned `already_applied`; a stale preview returned HTTP 409 in the prior live test.
+- Live synthetic user journey passed against Vercel AI Gateway and FalkorDB: source extraction → original evidence quote → Analyst/Coordinator decision → correction preview/apply → replacement claim with reviewer-correction provenance → fresh agent task. The fresh task retrieved the replacement claim ID and quoted the reviewer correction, not the superseded source quote. Duplicate Apply returned `already_applied`; a stale preview returned HTTP 409 in the prior live test. A correction initially returned HTTP 500 because FalkorDB rejected a `NOT EXISTS` subquery; the query was replaced and the full live apply/retrieval journey then passed.
 - Live vague prompt with no workspace evidence completed as `needs_review`, persisted an explicit “No source-backed answer yet” decision and handoff event, and created no action instead of returning a 503.
 - In a live synthetic run the Coordinator did not propose an action, so action hold on an actually generated action remains unverified live. FalkorDB query/store regression tests cover direct decision/action dependency reconciliation and alternative support.
 - FalkorDB Python client returned typed headers as `[type_code, alias]`; row decoder fix was tested live through workspace authorization, ingestion and graph reads.
-- `apps/api/.venv/bin/python -m pytest -q`: 16 passed, including account, provider, agent-output repair, correction provenance and dependency-reconciliation tests; one existing Starlette deprecation warning.
-- `npm --prefix apps/web test -- --reporter=dot`: 7 passed. Covers landing/auth/workspace navigation and graph node/edge selection. Correction drawer behavior has passed its focused UI test; full-suite stability of that extra test is still being tightened, so the suite currently keeps the stable navigation and graph tests.
+- Latest full suite: `apps/api/.venv/bin/python -m pytest -q`: 16 passed, including account, provider, agent-output repair, correction evidence provenance, alternative support and dependent-action reconciliation tests; one existing Starlette deprecation warning.
+- Latest full suite: `npm --prefix apps/web test -- --reporter=dot`: 7 passed. Covers landing/auth/workspace navigation, graph node/edge inspection, saved-workspace recovery, and visible source-load errors. The correction-preview drawer also passed a focused component test in isolation; that test was removed from the full suite because its saved-workspace mock races when run with other tests, so the whole source→correct→recheck UI journey still needs stable browser acceptance coverage.
 - `npm --prefix apps/web run build`: TypeScript and Vite production build passed.
 - Python bytecode compile passed; Python dependencies pass `pip check`.
 - Local Docker Graph version logged by the container: FalkorDB 4.0.0; image tag is `falkordb/falkordb:v4.10.0`.
@@ -39,7 +40,7 @@ Updated: 2026-10-19. The project directory is `graph-h`; Git history, branch and
 ## Still blocked / not verified
 - No Playwright/browser automation is installed. Frontend component tests use an HTTP stub; live backend workflows use synthetic accounts and actual FalkorDB/Gateway. A complete real-browser walkthrough is still needed.
 - No hosted deployment is configured. Local Compose is running; Vercel/Northflank/FalkorDB Cloud domains and secrets are not provisioned here.
-- Live correction verification proved the replacement quote and a fresh agent retrieval. Live action-hold propagation was not observed because the real Coordinator did not propose an action in the test; this path is covered by unit/store tests only.
+- Live correction verification proved the replacement quote and a fresh agent retrieval. Live action-hold propagation was not observed because the real Coordinator did not propose an action in the test; this path is covered by store tests only.
 - Database restart/recovery has not yet been explicitly re-tested after these latest changes, though Compose uses a named volume and AOF settings.
 
 ## Deferred / product gaps
@@ -56,7 +57,7 @@ Updated: 2026-10-19. The project directory is `graph-h`; Git history, branch and
 ## Material limitations
 - Synthetic test accounts/workspaces remain in the persistent local FalkorDB volume; there is no workspace delete/reset UI. They are not product-preloaded examples.
 - Correction graph writes and follow-up support re-evaluation, action holds, and audit writes are multiple FalkorDB calls, not an atomic transaction. A crash can leave partial repair state; duplicate apply attempts reconciliation but does not guarantee transactional recovery.
-- Alternative support currently means “at least one other proposed/accepted claim”; source independence, evidence groups, and multi-hop dependency coverage are not modeled yet.
+- Alternative support currently means “at least one other proposed/accepted claim”; source independence, explicit evidence groups, and multi-hop dependency traversal are not modeled yet.
 - One fragment per source version; no chunking.
 - The configured FalkorDB image tag has not been pinned by digest; verify and pin before submission.
 - Live checks used synthetic content only; the action execution branch, restart recovery, and a full real-browser workflow still need verification.
