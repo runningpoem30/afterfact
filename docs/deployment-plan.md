@@ -20,7 +20,7 @@ The frontend currently proxies `/api` only in local Vite development. A producti
 
 ## API: deploy a persistent Python service
 
-Deploy the existing API container (`apps/api/Dockerfile`) to a long-running container platform that supports Python containers, HTTPS, environment secrets, and outbound connections. For a quick demo, choose one provider and verify it; AWS App Runner or ECS Fargate are reasonable candidates, but neither is provisioned by this repository yet. A serverless Vercel Python function is possible only after checking the runtime, request-duration, multipart, connection reuse, and workload limits; don't assume it will run the current app unchanged.
+Deploy the existing API container (`apps/api/Dockerfile`) to a long-running container platform that supports Python containers, HTTPS, environment secrets, outbound connections, and health checks. **Northflank is a reasonable first candidate** because it builds/deploys Dockerized services from Git and provides runtime secrets, persistent services, and deployment domains; it is not provisioned or tested here yet. AWS App Runner or ECS Fargate are alternatives if you prefer AWS. A serverless Vercel Python function is possible only after checking runtime, request-duration, multipart, connection reuse, and workload limits; don't assume it will run the current app unchanged.
 
 Set server-only variables in the API deployment:
 - `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKORDB_USERNAME`, `FALKORDB_PASSWORD`, `FALKORDB_SSL` from the chosen FalkorDB deployment.
