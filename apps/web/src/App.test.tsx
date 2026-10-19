@@ -49,7 +49,7 @@ describe('Afterhack first-use state', () => {
     fireEvent.click(screen.getByRole('button', { name: /Continue to Engineering/i }));
     await waitFor(() => expect(screen.getByRole('navigation')).toBeTruthy());
     expect((fetch as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('/api/v1/workspaces/workspace-1/session', expect.objectContaining({ method: 'POST' }));
-    expect(await screen.findByText('Workspace graph')).toBeTruthy();
+    expect(await screen.findByText('Evidence to work')).toBeTruthy();
   });
 
   it('renders graph records and reveals details when nodes and relationships are selected', async () => {
@@ -70,7 +70,7 @@ describe('Afterhack first-use state', () => {
     }));
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /Continue to Engineering/i }));
-    expect(await screen.findByText('Workspace graph')).toBeTruthy();
+    expect(await screen.findByText('Evidence to work')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: /Open graph explorer/i })[0]);
     expect(await screen.findByText('Dependency canvas')).toBeTruthy();
     expect(screen.getByText('Source')).toBeTruthy();
@@ -96,7 +96,7 @@ describe('Afterhack first-use state', () => {
     }));
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /Continue to Engineering/i }));
-    expect((await screen.findAllByText('Workspace graph')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Evidence to work')).length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByRole('button', { name: /^Sources/ }).find(button => button.classList.contains('nav-item'))!);
     expect(await screen.findByText('Source service unavailable')).toBeTruthy();
     expect(screen.queryByText('No sources yet')).toBeNull();
@@ -116,7 +116,7 @@ describe('Afterhack first-use state', () => {
     }));
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /Continue to Engineering/i }));
-    expect((await screen.findAllByText('Workspace graph')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Evidence to work')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Counts and graph').length).toBeGreaterThan(0);
     const pages = [
       ['Sources', 'Add documents', 'Add the original information'],
@@ -158,7 +158,7 @@ describe('Afterhack first-use state', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-horse-password' } });
     fireEvent.click(screen.getAllByRole('button', { name: /^Log in$/i }).find(button => button.closest('form'))!);
 
-    expect((await screen.findAllByText('Workspace graph')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Evidence to work')).length).toBeGreaterThan(0);
     expect(requests).toContain('/api/v1/workspaces');
     expect(screen.queryByRole('heading', { name: 'Create a workspace' })).toBeNull();
     expect(JSON.parse(localStorage.getItem('afterhack_workspace') || '{}').id).toBe('workspace-1');
@@ -198,7 +198,7 @@ describe('Afterhack first-use state', () => {
     fireEvent.click(authSubmit!);
     fireEvent.change(await screen.findByLabelText('Workspace name'), { target: { value: 'Launch review' } });
     fireEvent.click(screen.getByRole('button', { name: /Create workspace/i }));
-    expect((await screen.findAllByText('Workspace graph')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Evidence to work')).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: /Agent workspace/i }).length).toBeGreaterThan(0);
   });
 });

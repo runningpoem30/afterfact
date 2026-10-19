@@ -113,18 +113,64 @@ class RecallStore:
         return {"workspace": {"id": workspace_id, "name": result.result_set[0][0], "revision": result.result_set[0][1]}, "counts": {"sources": data.get("Source", 0), "claims": data.get("Claim", 0), "decisions": data.get("Decision", 0), "actions": data.get("Action", 0), "investigations": data.get("Investigation", 0)}, "attention": self.rows(g.ro_query("MATCH (n) WHERE n.status IN ['needs_review','held','contested','unsupported'] RETURN n.id AS id, labels(n)[0] AS type, n.statement AS title, n.status AS status LIMIT 25"))}
 
     def graph_data(self, workspace_id: str, limit: int) -> dict[str, Any]:
-        g = self._graph(workspace_id)
-        nodes = self.rows(g.ro_query("MATCH (n) RETURN id(n) AS internal_id, labels(n) AS labels, properties(n) AS properties LIMIT $limit", {"limit": limit}))
-        edges = self.rows(g.ro_query("MATCH (a)-[r]->(b) RETURN id(a) AS source_internal, id(b) AS target_internal, type(r) AS type, properties(r) AS properties LIMIT $limit", {"limit": limit * 2}))
-        mapped = []
-        internal = {}
-        for item in nodes:
-            props = item["properties"]
-            node_id = props.get("id", str(item["internal_id"]))
-            internal[item["internal_id"]] = node_id
-            mapped.append({"id": node_id, "type": item["labels"][0] if item["labels"] else "Node", "label": props.get("name") or props.get("statement") or props.get("id"), "status": props.get("status", "active"), "properties": props})
-        links = [{"source": internal.get(e["source_internal"], str(e["source_internal"])), "target": internal.get(e["target_internal"], str(e["target_internal"])), "type": e["type"], "properties": e["properties"]} for e in edges]
-        return {"nodes": mapped, "edges": links}
+        """Return a bounded, user-facing knowledge graph projection.
+
+        Source versions/fragments, audit events, agent runs, and handoff internals remain
+        persisted in FalkorDB, but the primary graph focuses on connected work concepts.
+        """
+        graph = self._graph(workspace_id)
+        visible_labels = ["Source", "Claim", "Decision", "Action", "Correction"]
+        node_rows = self.rows(graph.ro_query(
+            "MATCH (n) WHERE labels(n)[0] IN $labels "
+            "RETURN properties(n) AS properties, labels(n) AS labels LIMIT $limit",
+            {"labels": visible_labels, "limit": limit},
+        ))
+        nodes_by_id: dict[str, dict[str, Any]] = {}
+        for row in node_rows:
+            props = row["properties"]
+            labels = row["labels"]
+            kind = labels[0] if labels else "Record"
+            node_id = props.get("id")
+            if not node_id:
+                continue
+            if kind == "Source":
+                label = props.get("name") or "Untitled source"
+            elif kind == "Claim":
+                label = props.get("statement") or "Untitled claim"
+            elif kind == "Decision":
+                label = props.get("title") or props.get("statement") or "Untitled decision"
+            elif kind == "Action":
+                label = props.get("title") or "Untitled proposed action"
+            else:
+                label = props.get("corrected_statement") or "Correction"
+            nodes_by_id[node_id] = {
+                "id": node_id,
+                "type": kind,
+                "label": str(label),
+                "status": str(props.get("status") or "active"),
+                "properties": props,
+            }
+
+        edge_queries = [
+            ("SUPPORTS", "MATCH (s:Source)-[:HAS_VERSION]->(:SourceVersion)-[:HAS_FRAGMENT]->(:SourceFragment)<-[:SUPPORTED_BY]-(c:Claim) RETURN DISTINCT s.id AS source, c.id AS target, 'SUPPORTS' AS type LIMIT $limit"),
+            ("USED_CLAIM", "MATCH (d:Decision)-[:USED_CLAIM]->(c:Claim) RETURN DISTINCT c.id AS source, d.id AS target, 'USED_CLAIM' AS type LIMIT $limit"),
+            ("REQUIRES", "MATCH (a:Action)-[:REQUIRES]->(d:Decision) RETURN DISTINCT d.id AS source, a.id AS target, 'REQUIRES' AS type LIMIT $limit"),
+            ("SUPERSEDES", "MATCH (old:Claim)-[:SUPERSEDES]->(replacement:Claim) RETURN DISTINCT old.id AS source, replacement.id AS target, 'SUPERSEDES' AS type LIMIT $limit"),
+            ("CORRECTS", "MATCH (corr:Correction)-[:CORRECTS]->(old:Claim) RETURN DISTINCT corr.id AS source, old.id AS target, 'CORRECTS' AS type LIMIT $limit"),
+        ]
+        links: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for _, query in edge_queries:
+            for edge in self.rows(graph.ro_query(query, {"limit": min(limit * 2, 300)})):
+                source, target, relation = edge["source"], edge["target"], edge["type"]
+                if source not in nodes_by_id or target not in nodes_by_id:
+                    continue
+                key = (source, target, relation)
+                if key in seen:
+                    continue
+                seen.add(key)
+                links.append({"source": source, "target": target, "type": relation, "properties": {}})
+        return {"nodes": list(nodes_by_id.values()), "edges": links}
 
     def sources(self, workspace_id: str) -> list[dict[str, Any]]:
         return self.rows(self._graph(workspace_id).ro_query("MATCH (s:Source)-[:HAS_VERSION]->(v:SourceVersion) RETURN s.id AS id, s.name AS name, v.id AS version_id, v.created_at AS created_at, v.status AS status ORDER BY v.created_at DESC LIMIT 100"))

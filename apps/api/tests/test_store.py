@@ -3,6 +3,37 @@ from types import SimpleNamespace
 from app.store import RecallStore
 
 
+def test_overview_graph_projects_user_facing_records_and_meaningful_paths():
+    class Result:
+        def __init__(self, headers, rows):
+            self.header = [[1, name] for name in headers]
+            self.result_set = rows
+
+    class Graph:
+        def ro_query(self, query, params=None):
+            if "MATCH (n) WHERE labels(n)[0] IN $labels" in query:
+                return Result(["properties", "labels"], [
+                    [{"id": "source-1", "name": "Ops note"}, ["Source"]],
+                    [{"id": "claim-1", "statement": "Window is May 8", "status": "proposed"}, ["Claim"]],
+                    [{"id": "decision-1", "title": "Review schedule"}, ["Decision"]],
+                ])
+            if "'SUPPORTS' AS type" in query:
+                return Result(["source", "target", "type"], [["source-1", "claim-1", "SUPPORTS"]])
+            if "'USED_CLAIM' AS type" in query:
+                return Result(["source", "target", "type"], [["claim-1", "decision-1", "USED_CLAIM"]])
+            return Result(["source", "target", "type"], [])
+
+    store = RecallStore.__new__(RecallStore)
+    store._graph = lambda workspace_id: Graph()
+    result = store.graph_data("workspace-1", 100)
+
+    assert {node["type"] for node in result["nodes"]} == {"Source", "Claim", "Decision"}
+    assert {(edge["source"], edge["target"], edge["type"]) for edge in result["edges"]} == {
+        ("source-1", "claim-1", "SUPPORTS"),
+        ("claim-1", "decision-1", "USED_CLAIM"),
+    }
+
+
 def test_result_rows_decode_falkordb_typed_headers():
     result = SimpleNamespace(
         header=[[1, "id"], [1, "name"]],
