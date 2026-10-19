@@ -1,3 +1,0 @@
-# AI coding assistance disclosure
-
-AI coding assistance was used to inspect the repository, research official FalkorDB and hackathon references, draft architecture and implementation, and generate/edit code and documentation. The participant is responsible for reviewing the code, checking generated claims against actual integrations, running tests against real services, understanding all graph queries and security boundaries, and being able to explain the design. No live model output, external action, benchmark result, deployment, or acceptance test should be reported unless actually performed and recorded.
