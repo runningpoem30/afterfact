@@ -9,3 +9,4 @@ apps/web/dist/
 apps/web/.npm-cache/
 apps/web/tsconfig.tsbuildinfo
 apps/api/*.egg-info/
+docs
