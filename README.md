@@ -1,66 +1,128 @@
 # Afterhack
 
-**Repair the consequences of incorrect AI memory.** Afterhack is an evidence-backed agent memory and coordination workspace. Its graph stores the relationships between sources, source versions, fragments, claims, corrections, decisions, and actions so that changed evidence can be traced to dependent work.
+**Repair the consequences of incorrect AI memory.**
 
-> **Current implementation status:** working live API vertical slice. Synthetic end-to-end API tests have verified live Vercel AI Gateway extraction, exact source-quote provenance, FalkorDB graph writes/reads, Analyst → Coordinator handoff, evidence-linked draft decisions, correction preview/apply, duplicate correction retries, and stale-preview rejection. The complete browser journey, restart durability, multi-hop support evaluation, atomic repair, and public deployment are still unverified or incomplete; see [`docs/implementation-status.md`](docs/implementation-status.md).
+AI agents remember things, but nothing tracks what they *did* with what they remembered. When a remembered fact turns out to be wrong, deleting it is easy. The hard part is finding everything the agent already built on top of it: the decisions it drafted and the actions it proposed.
 
-## Run locally
+Afterhack stores agent memory as a **FalkorDB graph of _why_**: which source supports which claim, which claim a decision used, and which action needs that decision. Every claim must carry an exact quote from its source. When a person corrects a claim, Afterhack walks the graph to show what depends on it, flags only the decisions that lost their support, holds the actions that need those decisions, and records the correction as new evidence from a human reviewer, so agents never cite the original mistake as proof of the fix.
 
-Prerequisites: Docker with Compose, Python 3.11+ (for local API development), Node 22+ (for local web development), and a Vercel AI Gateway API key for live source extraction. Do not put real secrets in source control.
+> **Hackathon:** WeMakeDevs Graph Hacks with FalkorDB
+> **Tracks:** Agent Memory and Coordination · Agents That Act on Connected Data
+> **Deployment:** runs locally with one command (`docker compose up --build`). Full setup is below.
 
-1. Copy [`env.template`](env.template) to `.env`; set `VERCEL_AI_GATEWAY_API_KEY` and a private `SESSION_SECRET`.
-2. Start the stack: `docker compose up --build`.
-3. Open <http://localhost:5173>. FalkorDB health is available at <http://localhost:8000/api/v1/health>; API docs at <http://localhost:8000/docs>.
-4. Create a private workspace, add a source, and inspect the resulting graph and claims. Without `VERCEL_AI_GATEWAY_API_KEY`, source extraction returns a clear `model_unconfigured` error; without FalkorDB, graph operations return 503.
+---
 
-Local development without Compose: start FalkorDB with a persistent volume, install API dependencies using `pip install -e 'apps/api[test]'`, run `uvicorn app.main:app --app-dir apps/api --reload`, then `npm --prefix apps/web install && npm --prefix apps/web run dev`.
+## Quick start
 
-## Configuration notes
+```bash
+git clone https://github.com/runningpoem30/afterfact.git
+cd afterfact
+cp env.template .env    # set VERCEL_AI_GATEWAY_API_KEY and SESSION_SECRET
+docker compose up --build
+```
 
-The checked-in [`env.template`](env.template) lists all supported variables with non-secret local defaults. Copy it to `.env`; `.env` is ignored by Git. See [`docs/falkordb-deployment.md`](docs/falkordb-deployment.md) for exact local versus hosted connection steps.
+Open http://localhost:5173 and check http://localhost:8000/api/v1/health. Manual setup, FalkorDB Cloud and troubleshooting are in [guide/setup.md](guide/setup.md).
 
-- `VERCEL_AI_GATEWAY_API_KEY`: create an API key in Vercel AI Gateway and put it in the root `.env` file as `VERCEL_AI_GATEWAY_API_KEY=...`. Compose passes this file only to the API container; it is never embedded in the browser bundle. Do not commit `.env` or paste the key into chat.
-- `MODEL_NAME`: Gateway model identifier, for example `openai/gpt-4o-mini`. Check Vercel Gateway for the model you want to use and its supported tool-calling/JSON output features.
-- `VERCEL_AI_GATEWAY_BASE_URL`: defaults to `https://ai-gateway.vercel.sh/v1`.
-- `FALKORDB_USERNAME` / `FALKORDB_PASSWORD`: for local Compose, leave blank. For FalkorDB Cloud, copy the displayed database username/password from the instance's **Instance Details** tab (the documented default username is `falkordb`; do not guess the password). These are database credentials, separate from Vercel. `FALKORDB_SSL=true` only if that Cloud tier/instance indicates TLS is enabled; Free-tier instances have no TLS. Always use the instance's actual **Connectivity** host and port.
+## Documentation
 
-## Deployment plan and required configuration
+| Guide | What's inside |
+|---|---|
+| [guide/architecture.md](guide/architecture.md) | System architecture, agent request flow, the full graph data model (nodes, relationships, account graph) |
+| [guide/cypher-queries.md](guide/cypher-queries.md) | Every Cypher query the product depends on, with why each one matters |
+| [guide/setup.md](guide/setup.md) | Local setup (Docker, manual, FalkorDB Cloud), walkthrough, configuration, API reference, testing, deployment, security |
 
-The first screen is a standalone Afterhack landing page. Users create an email/password account or log in; workspace navigation appears after authentication and opening/creating an account-owned workspace. The landing is `apps/web/src/LandingPage.tsx`; the authenticated workspace is rendered by `apps/web/src/App.tsx`. Email verification, password reset, and production rate-limiting are not implemented yet.
+---
 
-The recommended deployment split is Vercel for the static frontend, a persistent Python/FastAPI container service (Northflank is a candidate) for application logic, FalkorDB Cloud for the graph, and server-side Vercel AI Gateway calls. See [`docs/deployment-plan.md`](docs/deployment-plan.md) for the sequence and security boundaries. No cloud deployment has been provisioned yet.
+## What it does
 
-Before deployment, configure the items below. Email/password authentication works locally; Google OAuth is not currently used or required.
+| Step | What happens | Where the graph is used |
+|---|---|---|
+| **1. Ingest** | You paste or upload a source document. A model extracts claims, and each claim must include an exact quote from the source. | `Source → SourceVersion → SourceFragment ← Claim` is written to FalkorDB. Quotes that aren't exact substrings are rejected. |
+| **2. Ask** | An **Analyst** agent searches stored claims with graph-backed tools and retrieves their source fragments. It hands a proposal to a **Coordinator** agent, which writes a draft decision. | The agent can only cite claims it both **found** and **retrieved** during this run. `Decision -[:USED_CLAIM]→ Claim` and `Action -[:REQUIRES]→ Decision` are written. |
+| **3. Correct** | A reviewer corrects a wrong claim and gets an impact preview first. | A traversal finds every decision and action that depends on the claim. |
+| **4. Repair** | Applying the correction supersedes the old claim, creates a replacement with its own human-reviewer evidence, and re-checks every dependent decision. | Decisions with no other supporting claim become `needs_review`, and their actions become `held`. Decisions that still have other support are left alone. |
+| **5. Ask again** | A fresh agent task now finds and quotes the **correction**, not the superseded source. | Superseded claims are excluded from retrieval, and the replacement claim points to its reviewer-correction fragment. |
 
-- `ACCOUNT_GRAPH_NAME`: server-fixed FalkorDB graph for account records; keep it on the API server.
-- A FalkorDB Cloud instance and its endpoint host, port, database username/password, TLS enabled/disabled state, and tier/persistence choice. Put those only in the API host secret settings.
-- Northflank account/project/service only if you choose it for the API; Vercel project/team for the frontend. No cloud account API token is needed for local development.
-- Public frontend/API domains and allowed CORS origins once deployment domains are chosen. OAuth redirect URIs are only needed if we later add Google login.
+If there's no supporting evidence for a question, the agent records **"No source-backed answer yet"** as a `needs_review` decision and creates no action, rather than inventing an answer.
 
-Do not send credentials in this chat. Google OAuth credentials are not needed for email/password signup. When provider credentials are needed later, enter them directly in the provider's server-side secrets/environment UI or in your local ignored `.env`.
+---
 
-## Architecture
+## Why FalkorDB is load-bearing
 
-- `apps/web`: React + TypeScript + Vite UI; React Flow renders the backend graph response.
-- `apps/api`: FastAPI routes, Vercel AI Gateway structured extraction and bounded tool-calling adapters, signed user sessions, owner-checked account workspaces, FalkorDB repository.
-- `compose.yaml`: pinned FalkorDB image with append-only persistence and a named volume, API, and static web build.
-- The backend derives graph names from UUID workspace IDs; requests cannot select a graph by arbitrary name. Signed account and workspace tokens are isolated and expire after 24 hours. Current email/password auth does not verify email or provide password reset/rate limiting; use a production identity provider or harden those controls before unrestricted public signup.
-- The Analyst → Coordinator route uses real Vercel AI Gateway model calls, bounded FalkorDB-backed tools, source-fragment retrieval, and persisted handoff/run/decision/action proposal records. Synthetic live tests have exercised this route; broader browser acceptance and operational recovery remain outstanding.
+FalkorDB isn't a visualisation layer here. It's the only store, and the product's core features are graph traversals:
 
-## Graph model and query catalog
+- **There's no other database.** Every source, claim, correction, decision, action, agent run, handoff, audit event and user account lives in FalkorDB. The API has no in-memory fallback. If FalkorDB is down, the health check reports `degraded` and graph routes return `503`.
+- **The agents' tools are graph queries.** `search_claims` and `retrieve_source_fragments` are Cypher reads over `Claim -[:SUPPORTED_BY]→ SourceFragment`. Without the graph, the agents have nothing to ground answers in, and the evidence gate rejects every citation.
+- **Correction impact is a traversal.** "What depends on this claim?" is `(Claim)<-[:USED_CLAIM]-(Decision)<-[:REQUIRES]-(Action)`. "Does this decision still have support?" is a per-decision walk over its other `USED_CLAIM` edges.
+- **Provenance is structure, not a column.** Whether a claim came from a document or from a human reviewer is decided by which `SourceFragment` it's `SUPPORTED_BY`, and what that fragment hangs off (`SourceVersion` or `Correction`).
+- **Isolation is per graph.** Each workspace is its own FalkorDB graph, and accounts live in a separate, server-fixed account graph.
 
-Full model semantics and query catalog: [`docs/graph-model.md`](docs/graph-model.md), [`docs/query-catalog.md`](docs/query-catalog.md). Operational status and known limitations: [`docs/implementation-status.md`](docs/implementation-status.md).
+Remove FalkorDB and there's no ingestion, no retrieval, no impact analysis and no repair. Nothing is left to run.
 
-Core patterns: `Workspace-[:HAS_VERSION]->SourceVersion-[:HAS_FRAGMENT]->SourceFragment`; `Claim-[:SUPPORTED_BY]->SourceFragment`; `Claim-[:SUPERSEDES]->Claim`; `Correction-[:CORRECTS]->Claim`; `Claim-[:USED_CLAIM]->Decision-[:REQUIRES]->Action`; `AuditEvent` stores durable event records. IDs are application-generated and stable; FalkorDB internal IDs are only used to render graph edges.
+---
 
-## Verification
+## Walkthrough: try the full loop
 
-Run backend unit tests with `apps/api/.venv/bin/pytest -q`, frontend tests with `npm --prefix apps/web test`, and the production build with `npm --prefix apps/web run build`. Unit tests use isolated doubles where needed; live synthetic acceptance results are listed separately in `docs/implementation-status.md`.
+1. **Create an account** on the landing page, then **create a workspace**. Each workspace gets its own FalkorDB graph.
+2. **Sources** → add a source:
+   - Name: `Launch plan`
+   - Content: `The product launch is scheduled for June 12. The marketing team will book the venue once the launch date is confirmed.`
+   - Click **Extract & store**.
+3. **Memory** → you'll see the extracted claim with its exact quote highlighted from the source.
+4. **Agent workspace** → ask `When is the product launch?` and click **Run Analyst → Coordinator**. The result shows the decision, **EXACT EVIDENCE USED** with its source label, and the tool trail (`search claims` → `retrieve source fragments`).
+5. **Investigations** → the dependency canvas shows `Source → Claim → Decision`.
+6. **Memory** → open the June 12 claim and enter `The product launch is scheduled for July 12.` → **Preview**. The preview lists the decision that depends on this claim.
+7. **Apply** the correction. The old claim is superseded, and the dependent decision is flagged `needs_review` because it has no other support.
+8. **Agent workspace** → ask the same question again. The evidence is now the reviewer's correction, labelled **Workspace reviewer correction**, not the superseded June quote.
 
-## Event submission
+To check that the agent refuses to guess, ask something unrelated, such as `What is the Q3 hiring budget?`. You'll get **"No source-backed answer yet"**, status `needs_review`, and no action.
 
-Intended track: **Track 02 — Agent Memory and Coordination** (Track 01 fit depends on completing the tool-using action workflow). Hackathon: WeMakeDevs Graph Hacks with FalkorDB, Oct 15–18, 2026; submission deadline Oct 18, 11:59 PM IST. Recheck the official rules before submission. Required before submission: public repository, completed graph/query docs, a verified live demo recording, deployment or reproducible local setup, and AI-assistance disclosure. See [`docs/demo-script.md`](docs/demo-script.md).
+---
 
-## Credits and AI disclosure
+## Known limitations
 
-AI coding assistance was used for implementation; the participant must review, understand, test, and be able to explain all submitted work. This project does not claim that provenance-aware cascading memory repair is novel. Related work: [Yu et al., “From Faulty Memories to Corrected Actions” (arXiv:2608.10502)](https://arxiv.org/abs/2608.10502); [Wang et al., “PACMI: Provenance-Aware Cascading Memory Invalidation” (arXiv:2610.05732)](https://arxiv.org/abs/2610.05732). See [`docs/prior-art.md`](docs/prior-art.md).
+- **Repair isn't atomic.** Correction plus dependency repair is several FalkorDB calls. A crash in between can leave partial state; retrying the same apply runs the repair again (`already_applied`), but this isn't a transactional guarantee.
+- **Support is one hop deep.** "Alternative support" means "at least one other current claim used by the decision". It doesn't check whether that claim comes from an independent source, and it doesn't follow longer dependency chains.
+- **Action holds are verified by tests, not seen live.** In live runs the Coordinator didn't propose an action, so `held` propagation is covered by store tests only.
+- **One fragment per source.** There's no chunking yet. Large documents are stored as a single fragment, and extraction reads up to 100,000 characters.
+- **Actions are proposals.** Nothing is executed outside the app.
+- **Auth is demo-grade.** No email verification, password reset or login rate limiting yet.
+- **No workspace delete or reset in the UI.**
+
+---
+
+## Project structure
+
+```
+.
+├── apps/
+│   ├── api/                    FastAPI backend
+│   │   ├── app/
+│   │   │   ├── main.py         routes, request validation, auth dependencies
+│   │   │   ├── store.py        every FalkorDB query (ingest, retrieval, preview, apply, repair, graph view)
+│   │   │   ├── agents.py       Analyst → Coordinator orchestration and evidence gate
+│   │   │   ├── extractor.py    model claim extraction (JSON mode)
+│   │   │   ├── model_client.py OpenAI-compatible client (server-side)
+│   │   │   ├── auth.py         password hashing, signed tokens
+│   │   │   └── settings.py     environment configuration
+│   │   ├── tests/              pytest suite
+│   │   ├── Dockerfile
+│   │   └── pyproject.toml
+│   └── web/                    React + TypeScript + Vite frontend
+│       ├── src/
+│       │   ├── App.tsx         workspace UI (Overview, Sources, Memory, Agents, Investigations)
+│       │   ├── LandingPage.tsx landing, signup and login
+│       │   └── App.test.tsx    vitest suite
+│       ├── nginx.conf          serves the built app and proxies /api to the API container
+│       └── Dockerfile
+├── compose.yaml                FalkorDB (persistent) + API + web
+├── env.template                every supported environment variable
+├── guide/                      architecture, Cypher queries, setup and operations
+└── README.md
+```
+
+---
+
+## Acknowledgements
+
+Built for **WeMakeDevs Graph Hacks** on [FalkorDB](https://www.falkordb.com/), using the official [falkordb-py](https://github.com/FalkorDB/falkordb-py) client, [FastAPI](https://fastapi.tiangolo.com/), [React Flow](https://reactflow.dev/) and an OpenAI-compatible model gateway.
