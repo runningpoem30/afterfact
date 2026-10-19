@@ -1,4 +1,4 @@
-# Afterhack
+# afterfact
 
 **Repair the consequences of incorrect AI memory.**
 
